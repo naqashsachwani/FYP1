@@ -34,14 +34,19 @@ const Hero = () => {
 
           {/* Content */}
           <div className='relative z-20 p-6 sm:p-12 lg:p-16 flex items-start h-full'>
-            <div className='max-w-lg'>
-              <div className='inline-flex items-center gap-2 bg-white/95 backdrop-blur-sm text-green-800 rounded-full px-4 py-2.5 shadow-lg mb-4 sm:mb-6'>
-                <span className='bg-gradient-to-r from-green-600 to-emerald-500 px-3 py-1 rounded-full text-white text-xs font-bold shadow-md'>
+            <div className='max-w-lg w-full'> {/* Added w-full */}
+              
+              {/* --- FIXED BADGE SECTION --- */}
+              <div className='inline-flex flex-wrap items-center gap-2 bg-white/95 backdrop-blur-sm text-green-800 rounded-full px-3 py-2 sm:px-4 sm:py-2.5 shadow-lg mb-4 sm:mb-6 max-w-full'>
+                <span className='bg-gradient-to-r from-green-600 to-emerald-500 px-2 py-0.5 sm:px-3 sm:py-1 rounded-full text-white text-[10px] sm:text-xs font-bold shadow-md shrink-0'>
                   NEWS
                 </span>
-                <span className='text-sm font-medium whitespace-nowrap'>Free Shipping on Orders Above Rs 5000!</span>
-                <ChevronRightIcon className='ml-1 text-green-700' size={16} />
+                <span className='text-xs sm:text-sm font-medium leading-tight'>
+                  Free Shipping on Orders Above Rs 5000!
+                </span>
+                <ChevronRightIcon className='ml-auto sm:ml-1 text-green-700 shrink-0' size={16} />
               </div>
+              {/* --------------------------- */}
 
               <h2 className='text-3xl sm:text-5xl lg:text-6xl font-bold text-white leading-tight drop-shadow-lg'>
                 Saving Goals for<br />
