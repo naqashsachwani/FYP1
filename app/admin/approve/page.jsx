@@ -1,0 +1,264 @@
+'use client'
+import { useEffect, useState } from "react"
+import { useAuth, useUser } from "@clerk/nextjs"
+import axios from "axios"
+import toast from "react-hot-toast"
+import Loading from "@/components/Loading"
+import StoreInfo from "@/components/admin/StoreInfo"
+import {
+  Shield,
+  CheckCircle,
+  XCircle,
+  Clock,
+  AlertCircle,
+  Store,
+  Search
+} from "lucide-react"
+
+export default function AdminApprove() {
+  const { user } = useUser()
+  const { getToken } = useAuth()
+  const [stores, setStores] = useState([])
+  const [loading, setLoading] = useState(true)
+  const [searchTerm, setSearchTerm] = useState("")
+  const [statusFilter, setStatusFilter] = useState("pending")
+
+  const fetchStores = async () => {
+    try {
+      const token = await getToken()
+      const { data } = await axios.get('/api/admin/approve-store', {
+        headers: { Authorization: `Bearer ${token}` }
+      })
+      setStores(data.stores)
+    } catch (error) {
+      toast.error(error?.response?.data?.error || error.message)
+    } finally {
+      setLoading(false)
+    }
+  }
+
+  const handleApprove = async ({ storeId, status }) => {
+    try {
+      const token = await getToken()
+      const { data } = await axios.post('/api/admin/approve-store', { storeId, status }, {
+        headers: { Authorization: `Bearer ${token}` }
+      })
+      toast.success(data.message)
+      await fetchStores()
+    } catch (error) {
+      toast.error(error?.response?.data?.error || error.message)
+    }
+  }
+
+  useEffect(() => {
+    if (user) fetchStores()
+  }, [user])
+
+  const filteredStores = stores.filter(store => {
+    const matchesSearch =
+      store.name.toLowerCase().includes(searchTerm.toLowerCase()) ||
+      store.username.toLowerCase().includes(searchTerm.toLowerCase()) ||
+      store.user.name.toLowerCase().includes(searchTerm.toLowerCase())
+    const matchesStatus = statusFilter === "all" || store.status === statusFilter
+    return matchesSearch && matchesStatus
+  })
+
+  const pendingCount = stores.filter(s => s.status === 'pending').length
+  const approvedCount = stores.filter(s => s.status === 'approved').length
+  const rejectedCount = stores.filter(s => s.status === 'rejected').length
+
+  if (loading)
+    return (
+      <div className="flex items-center justify-center min-h-[60vh]">
+        <Loading />
+      </div>
+    )
+
+  return (
+    <div className="space-y-6 mb-28 px-3 sm:px-6 lg:px-8 w-full max-w-7xl mx-auto">
+      {/* Header */}
+      <div className="flex flex-col lg:flex-row lg:items-center justify-between gap-4">
+        <div>
+          <h1 className="text-2xl sm:text-3xl font-bold text-slate-800">
+            Store Approvals
+          </h1>
+          <p className="text-slate-600 text-sm sm:text-base mt-1 sm:mt-2">
+            Review and approve store registration requests for DreamSaver
+          </p>
+        </div>
+
+        <div className="flex items-center gap-2 sm:gap-3 bg-gradient-to-r from-blue-50 to-purple-50 px-3 sm:px-4 py-2.5 sm:py-3 rounded-xl border border-blue-100">
+          <Shield size={18} className="text-blue-600 shrink-0" />
+          <span className="text-xs sm:text-sm text-blue-700 font-medium">
+            Admin Approval Panel
+          </span>
+        </div>
+      </div>
+
+      {/* Stats */}
+      <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-4">
+        {[ 
+          { label: "Pending Review", count: pendingCount, color: "yellow" },
+          { label: "Approved Stores", count: approvedCount, color: "green" },
+          { label: "Rejected Stores", count: rejectedCount, color: "red" }
+        ].map((stat, i) => (
+          <div key={i} className="bg-white rounded-2xl p-5 sm:p-6 border border-slate-200 shadow-sm flex justify-between items-center">
+            <div>
+              <p className="text-slate-600 text-sm">{stat.label}</p>
+              <p className={`text-2xl sm:text-3xl font-bold text-${stat.color}-600 mt-2`}>
+                {stat.count}
+              </p>
+            </div>
+            <div className={`w-10 h-10 sm:w-12 sm:h-12 bg-${stat.color}-100 rounded-xl flex items-center justify-center`}>
+              {stat.color === "yellow" ? (
+                <Clock className={`text-${stat.color}-600`} />
+              ) : stat.color === "green" ? (
+                <CheckCircle className={`text-${stat.color}-600`} />
+              ) : (
+                <XCircle className={`text-${stat.color}-600`} />
+              )}
+            </div>
+          </div>
+        ))}
+      </div>
+
+      {/* Filters */}
+      <div className="bg-white rounded-2xl p-5 sm:p-6 border border-slate-200 shadow-sm">
+        <div className="flex flex-col md:flex-row gap-4 sm:items-center justify-between">
+          <div className="flex flex-col sm:flex-row gap-4 w-full sm:w-auto flex-1">
+            <div className="relative flex-1 max-w-md">
+              <Search className="absolute left-3 top-1/2 -translate-y-1/2 text-slate-400 w-4 h-4" />
+              <input
+                type="text"
+                placeholder="Search stores..."
+                value={searchTerm}
+                onChange={(e) => setSearchTerm(e.target.value)}
+                className="w-full pl-9 pr-4 py-2.5 sm:py-3 text-sm sm:text-base border border-slate-300 rounded-xl focus:ring-2 focus:ring-blue-500 bg-slate-50"
+              />
+            </div>
+
+            <div className="flex items-center gap-2 sm:gap-3">
+              <span className="text-slate-700 text-sm font-medium">Filter:</span>
+              <select
+                value={statusFilter}
+                onChange={(e) => setStatusFilter(e.target.value)}
+                className="px-3 sm:px-4 py-2.5 sm:py-3 text-sm border border-slate-300 rounded-xl focus:ring-2 focus:ring-blue-500 bg-slate-50"
+              >
+                <option value="all">All</option>
+                <option value="pending">Pending</option>
+                <option value="approved">Approved</option>
+                <option value="rejected">Rejected</option>
+              </select>
+            </div>
+          </div>
+
+          <div className="text-xs sm:text-sm text-slate-500 bg-slate-100 px-3 py-2 rounded-lg text-center">
+            {filteredStores.length} store{filteredStores.length !== 1 ? 's' : ''} found
+          </div>
+        </div>
+      </div>
+
+      {/* Store Cards */}
+      {filteredStores.length ? (
+        <div className="grid gap-5 sm:gap-6 grid-cols-1 md:grid-cols-2">
+          {filteredStores.map((store) => (
+            <div key={store.id} className="bg-white border border-slate-200 rounded-2xl shadow-sm hover:shadow-md transition-all overflow-hidden">
+              <div className={`px-4 sm:px-6 py-3 border-b text-sm ${store.status === "pending" ? "bg-yellow-50 border-yellow-200" : store.status === "approved" ? "bg-green-50 border-green-200" : "bg-red-50 border-red-200"}`}>
+                <div className="flex flex-wrap items-center justify-between gap-2">
+                  <div className="flex items-center gap-2">
+                    <div className={`w-3 h-3 rounded-full ${store.status === "pending" ? "bg-yellow-500" : store.status === "approved" ? "bg-green-500" : "bg-red-500"}`}></div>
+                    <span className={`font-semibold capitalize ${store.status === "pending" ? "text-yellow-800" : store.status === "approved" ? "text-green-800" : "text-red-800"}`}>
+                      {store.status}
+                    </span>
+                  </div>
+                  <span className="text-xs text-slate-500">
+                    Applied {new Date(store.createdAt).toLocaleDateString()}
+                  </span>
+                </div>
+              </div>
+
+              <div className="p-5 sm:p-6">
+                <StoreInfo store={store} />
+                {store.status === "pending" ? (
+                  <div className="flex flex-col sm:flex-row gap-3 mt-6 pt-5 border-t border-slate-200">
+                    <button
+                      onClick={() =>
+                        toast.promise(handleApprove({ storeId: store.id, status: "approved" }), {
+                          loading: "Approving...",
+                          success: "Store approved!",
+                          error: "Approval failed",
+                        })
+                      }
+                      className="flex-1 flex items-center justify-center gap-2 px-4 py-2.5 sm:py-3 bg-green-600 text-white rounded-xl hover:bg-green-700 text-sm font-medium transition-all"
+                    >
+                      <CheckCircle size={16} /> Approve
+                    </button>
+                    <button
+                      onClick={() =>
+                        toast.promise(handleApprove({ storeId: store.id, status: "rejected" }), {
+                          loading: "Rejecting...",
+                          success: "Store rejected!",
+                          error: "Rejection failed",
+                        })
+                      }
+                      className="flex-1 flex items-center justify-center gap-2 px-4 py-2.5 sm:py-3 bg-red-600 text-white rounded-xl hover:bg-red-700 text-sm font-medium transition-all"
+                    >
+                      <XCircle size={16} /> Reject
+                    </button>
+                  </div>
+                ) : (
+                  <div className={`mt-6 p-4 rounded-lg border text-sm font-medium flex items-center gap-2 ${store.status === "approved" ? "bg-green-50 border-green-200 text-green-800" : "bg-red-50 border-red-200 text-red-800"}`}>
+                    {store.status === "approved" ? (
+                      <>
+                        <CheckCircle size={16} /> Store approved
+                      </>
+                    ) : (
+                      <>
+                        <XCircle size={16} /> Store rejected
+                      </>
+                    )}
+                  </div>
+                )}
+              </div>
+
+              <div className="bg-slate-50 px-5 py-3 border-t border-slate-200 text-xs text-slate-500 flex flex-wrap justify-between gap-2">
+                <div className="flex items-center gap-1.5">
+                  <Store size={12} />
+                  <span>Application</span>
+                </div>
+                <div>
+                  ID: <span className="font-mono">{store.id}</span>
+                </div>
+              </div>
+            </div>
+          ))}
+        </div>
+      ) : (
+        <div className="bg-white rounded-2xl border border-slate-200 p-10 sm:p-12 text-center shadow-sm">
+          <div className="w-16 h-16 mx-auto mb-4 rounded-full bg-slate-100 flex items-center justify-center">
+            <AlertCircle className="w-8 h-8 text-slate-400" />
+          </div>
+          <h3 className="text-lg sm:text-xl font-semibold text-slate-700 mb-2">
+            {searchTerm || statusFilter !== "all" ? "No matching stores" : "No applications pending"}
+          </h3>
+          <p className="text-slate-500 text-sm sm:text-base max-w-md mx-auto">
+            {searchTerm || statusFilter !== "all"
+              ? "Try changing your filters or search keywords."
+              : "All applications are reviewed. New ones will appear here."}
+          </p>
+          {(searchTerm || statusFilter !== "all") && (
+            <button
+              onClick={() => {
+                setSearchTerm("")
+                setStatusFilter("all")
+              }}
+              className="mt-4 px-5 py-2.5 bg-blue-600 text-white rounded-lg hover:bg-blue-700 text-sm font-medium"
+            >
+              Clear Filters
+            </button>
+          )}
+        </div>
+      )}
+    </div>
+  )
+}

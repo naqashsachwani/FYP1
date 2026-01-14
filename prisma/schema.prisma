@@ -1,0 +1,659 @@
+generator client {
+  provider = "prisma-client-js"
+  previewFeatures = ["driverAdapters"]
+}
+
+datasource db {
+  provider  = "postgresql"
+  url       = env("DATABASE_URL")
+  directUrl = env("DIRECT_URL")
+}
+
+// ---------- EXISTING ENUMS ----------
+enum OrderStatus {
+  ORDER_PLACED
+  PROCESSING
+  SHIPPED
+  DELIVERED
+}
+
+enum PaymentMethod {
+  STRIPE
+}
+
+// ---------- NEW ENUMS ----------
+enum TransactionStatus {
+  PENDING
+  COMPLETED
+  FAILED
+  REFUNDED
+}
+
+enum InvoiceStatus {
+  DRAFT
+  PAID
+  VOID
+}
+
+enum EscrowStatus {
+  HELD
+  RELEASED
+  REFUNDED
+}
+
+enum RefundStatus {
+  REQUESTED
+  APPROVED
+  REJECTED
+  COMPLETED
+}
+
+enum StoreApplicationStatus {
+  PENDING
+  APPROVED
+  REJECTED
+}
+
+enum GoalStatus {
+  ACTIVE
+  COMPLETED
+  CANCELLED
+  REFUNDED
+}
+
+enum DeliveryStatus {
+  PENDING
+  DISPATCHED
+  IN_TRANSIT
+  DELIVERED
+}
+
+enum NotificationChannel {
+  IN_APP
+  EMAIL
+  SMS
+}
+
+enum NotificationType {
+  DEPOSIT_REMINDER
+  GOAL_COMPLETE
+  DELIVERY_UPDATE
+  SYSTEM_ALERT
+  PAYMENT_CONFIRMATION
+}
+
+enum DepositFrequency {
+  DAILY
+  WEEKLY
+  MONTHLY
+}
+
+// ---------- EXISTING MODELS ----------
+
+// User
+model User {
+  id    String @id 
+  name  String
+  email String
+  image String
+  cart  Json   @default("{}")
+
+  // Relations
+  ratings             Rating[]
+  addresses           Address[]
+  store               Store?
+  buyerOrders         Order[]     @relation("BuyerRelation")
+  goals               Goal[]
+  deposits            Deposit[]
+  transactions        Transaction[]
+  invoices            Invoice[]
+  refundRequests      RefundRequest[]
+  refunds             Refund[]    @relation("UserRefunds")              // added opposite for Refund.user
+  storeApplications   StoreApplication[]
+  notifications       Notification[]
+  createdAuditLogs    AuditLog[]  @relation("ActorAuditLogs")           // matches AuditLog.actor
+  auditLogs           AuditLog[]  @relation("AuditLogUser")            // matches AuditLog.user
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+}
+
+// Store
+model Store {
+  id          String   @id @default(cuid())
+  userId      String   @unique
+  name        String
+  description String
+  username    String   @unique
+  address     String
+  status      String   @default("pending")
+  isActive    Boolean  @default(false)
+  logo        String
+  email       String
+  contact     String
+  createdAt   DateTime @default(now())
+  updatedAt   DateTime @updatedAt
+
+  // Relations
+  products          Product[]
+  orders            Order[]
+  user              User        @relation(fields: [userId], references: [id])
+  storeApplication  StoreApplication? @relation("Store_Application")  // matches StoreApplication.store
+  priceLocks        PriceLock[]
+  refunds           Refund[]
+
+  // Indexes
+  @@index([status])
+  @@index([isActive])
+}
+
+// Product
+model Product {
+  id          String   @id @default(cuid())
+  name        String
+  description String
+  mrp         Float
+  price       Float
+  images      String[]
+  category    String
+  inStock     Boolean  @default(true)
+  storeId     String
+  createdAt   DateTime @default(now())
+  updatedAt   DateTime @updatedAt
+
+  // Relations
+  store      Store       @relation(fields: [storeId], references: [id], onDelete: Cascade)
+  orderItems OrderItem[]
+  ratings    Rating[]
+  goals      Goal[]
+  deposits   Deposit[]
+  priceLocks PriceLock[]
+
+  // Indexes
+  @@index([storeId])
+  @@index([category])
+  @@index([inStock])
+}
+
+// Order
+model Order {
+  id            String        @id @default(cuid())
+  total         Float
+  status        OrderStatus   @default(ORDER_PLACED)
+  userId        String
+  storeId       String
+  addressId     String
+  isPaid        Boolean       @default(false)
+  paymentMethod PaymentMethod
+  isCouponUsed  Boolean       @default(false)
+  couponCode    String?       // FK to Coupon
+  createdAt     DateTime      @default(now())
+  updatedAt     DateTime      @updatedAt
+
+  // Relations
+  user          User        @relation("BuyerRelation", fields: [userId], references: [id])
+  store         Store       @relation(fields: [storeId], references: [id])
+  address       Address     @relation(fields: [addressId], references: [id])
+  coupon        Coupon?     @relation(fields: [couponCode], references: [code])
+  orderItems    OrderItem[]
+  transactions  Transaction[]
+  invoices      Invoice[]
+  refundRequests RefundRequest[]
+  escrows       Escrow[]
+  priceLocks    PriceLock[]
+  ratings       Rating[]    // added to fix ambiguous/missing opposite relation for Rating.order
+
+  // Indexes
+  @@index([userId])
+  @@index([storeId])
+  @@index([status])
+  @@index([isPaid])
+}
+
+// OrderItem
+model OrderItem {
+  orderId   String
+  productId String
+  quantity  Int
+  price     Float
+
+  // Relations
+  order   Order   @relation(fields: [orderId], references: [id], onDelete: Cascade)
+  product Product @relation(fields: [productId], references: [id])
+
+  @@id([orderId, productId])
+}
+
+// Rating
+model Rating {
+  id        String   @id @default(cuid())
+  rating    Int
+  review    String
+  userId    String
+  productId String
+  orderId   String
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  // Relations
+  user    User    @relation(fields: [userId], references: [id], onDelete: Cascade)
+  product Product @relation(fields: [productId], references: [id], onDelete: Cascade)
+  order   Order   @relation(fields: [orderId], references: [id], onDelete: Cascade)
+
+  @@unique([userId, productId, orderId])
+}
+
+// Address
+model Address {
+  id        String   @id @default(cuid())
+  userId    String
+  name      String
+  email     String
+  street    String
+  city      String
+  state     String
+  zip       String
+  country   String
+  phone     String
+  createdAt DateTime @default(now())
+
+  // Relations
+  orders Order[]
+  user   User @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  // Indexes
+  @@index([userId])
+}
+
+// Coupon
+model Coupon {
+  code        String   @id
+  description String
+  discount    Float
+  forNewUser  Boolean
+  forMember   Boolean  @default(false)
+  isPublic    Boolean
+  expiresAt   DateTime
+  createdAt   DateTime @default(now())
+
+  orders Order[]
+
+  // Indexes
+  @@index([expiresAt])
+}
+
+// ---------- NEW MODELS FOR LAYAWAY SYSTEM ----------
+
+// Goal (Savings Goal)
+model Goal {
+  id             String          @id @default(cuid())
+  userId         String
+  productId      String?
+  targetAmount   Decimal         @db.Decimal(18, 2)
+  saved          Decimal         @db.Decimal(18, 2) @default(0)
+  status         GoalStatus      @default(ACTIVE)
+  startDate      DateTime?       @default(now())
+  endDate        DateTime?
+  frequency      DepositFrequency?
+  nextDepositDate DateTime?
+  priceLocked    Boolean         @default(true)
+  lockedPrice    Decimal         @db.Decimal(18, 2)
+
+  // Relations
+  user          User            @relation(fields: [userId], references: [id], onDelete: Cascade)
+  product       Product?        @relation(fields: [productId], references: [id])
+  deposits      Deposit[]
+  delivery      Delivery?
+  notifications Notification[]
+  refundRequest RefundRequest?     @relation("GoalRefundRequest")   // one-to-one
+  refund        Refund?            @relation("GoalRefund")          // one-to-one opposite for Refund
+  transactions  Transaction[]
+  invoices      Invoice[]
+  escrow        Escrow?            @relation("GoalEscrow")          // one-to-one opposite for Escrow
+  priceLock     PriceLock?         @relation("GoalPriceLock")       // one-to-one opposite for PriceLock
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  // Indexes
+  @@index([userId])
+  @@index([productId])
+  @@index([status])
+  @@index([endDate])
+}
+
+// Deposit Transaction
+model Deposit {
+  id              String   @id @default(cuid())
+  goalId          String?
+  productId       String?
+  userId          String
+  amount          Decimal  @db.Decimal(18, 2)
+  depositDate     DateTime @default(now())
+  paymentMethod   String   // STRIPE, CASH, BANK_TRANSFER
+  status          String   @default("COMPLETED") // COMPLETED, FAILED, PENDING
+  receiptNumber   String   @unique
+  stripePaymentId String?
+
+  // Relations
+  goal    Goal?    @relation(fields: [goalId], references: [id], onDelete: Cascade)
+  product Product? @relation(fields: [productId], references: [id])
+  user    User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  // Indexes
+  @@index([goalId])
+  @@index([userId])
+  @@index([depositDate])
+}
+
+// Delivery
+model Delivery {
+  id              String        @id @default(cuid())
+  goalId          String        @unique
+  orderId         String?
+  deliveryDate    DateTime?
+  estimatedDate   DateTime?
+  status          DeliveryStatus @default(PENDING)
+  trackingNumber  String?
+  carrier         String?
+  shippingAddress String?
+  coordinates     String?  // For map tracking: "lat,lng"
+
+  // Relations
+  goal              Goal               @relation(fields: [goalId], references: [id], onDelete: Cascade)
+  notifications     Notification[]
+  deliveryTrackings DeliveryTracking[]
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  // Indexes
+  @@index([status])
+  @@index([trackingNumber])
+}
+
+// Notification System
+model Notification {
+  id          String               @id @default(cuid())
+  userId      String
+  deliveryId  String?
+  goalId      String?
+  type        NotificationType
+  title       String
+  message     String
+  isRead      Boolean              @default(false)
+  channel     NotificationChannel  @default(IN_APP)
+
+  // Relations
+  user     User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+  delivery Delivery? @relation(fields: [deliveryId], references: [id], onDelete: Cascade)
+  goal     Goal?     @relation(fields: [goalId], references: [id], onDelete: Cascade)
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  // Indexes
+  @@index([userId])
+  @@index([isRead])
+  @@index([createdAt])
+}
+
+// Refund
+model Refund {
+  id          String   @id @default(cuid())
+  goalId      String   @unique                       // one-to-one with Goal
+  userId      String
+  storeId     String
+  amount      Decimal  @db.Decimal(18, 2)
+  reason      String
+  status      RefundStatus @default(REQUESTED) // use enum RefundStatus
+  adminNotes  String?
+  processedAt DateTime?
+
+  // Relations
+  goal   Goal  @relation("GoalRefund", fields: [goalId], references: [id], onDelete: Cascade)
+  user   User  @relation("UserRefunds", fields: [userId], references: [id], onDelete: Cascade)
+  store  Store @relation(fields: [storeId], references: [id], onDelete: Cascade)
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  // Indexes
+  @@index([storeId])
+  @@index([status])
+}
+
+// Store Application & Management
+model StoreApplication {
+  id           String                @id @default(cuid())
+  userId       String
+  storeId      String?               @unique               // make unique for one-to-one with Store
+  businessName String
+  documents    Json                  // uploaded docs (IDs/URLs)
+  contactEmail String
+  contactPhone String?
+  address      String?
+  
+  // New fields for financial/legal verification
+  taxId         String?              // Tax Identification Number
+  cnic          String?              // CNIC/Business Registration Number
+  accountNumber String?              // Bank Account Number
+  bankName      String?              // Bank Name
+  
+  status       StoreApplicationStatus @default(PENDING)
+  reviewedBy   String?               // admin id
+  reviewedAt   DateTime?
+  reviewNotes  String?
+
+  // Relations
+  user  User  @relation(fields: [userId], references: [id], onDelete: Cascade)
+  store Store? @relation("Store_Application", fields: [storeId], references: [id])
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  // Indexes
+  @@index([userId])
+  @@index([status])
+  @@index([createdAt])
+  @@index([taxId])
+  @@index([cnic])
+}
+
+// Price Lock & Inflation Policy
+model PriceLock {
+  id            String   @id @default(cuid())
+  productId     String
+  goalId        String?  @unique        // one-to-one with Goal
+  orderId       String?
+  lockedPrice   Decimal  @db.Decimal(18, 2)
+  originalPrice Decimal  @db.Decimal(18, 2)
+  lockedBy      String?  // userId who locked (owner of goal)
+  lockedAt      DateTime @default(now())
+  expiresAt     DateTime?
+  status        String   @default("ACTIVE") // ACTIVE / EXPIRED / RELEASED / CANCELLED
+  storeId       String?  
+
+  // Relations
+  product Product @relation(fields: [productId], references: [id], onDelete: Cascade)
+  goal    Goal?   @relation("GoalPriceLock", fields: [goalId], references: [id])
+  order   Order?  @relation(fields: [orderId], references: [id])
+  store   Store?  @relation(fields: [storeId], references: [id])
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  // Indexes
+  @@index([productId])
+  @@index([goalId])
+  @@index([orderId])
+  @@index([storeId])
+  @@index([status])
+  @@index([expiresAt])
+}
+
+// System Audit Log
+model AuditLog {
+  id         String   @id @default(cuid())
+
+  // optional FK to the User who acted (e.g., admin/user who performed the action)
+  actorId    String? 
+  // optional FK to an affected User (if you also want to link to the user being changed)
+  userId     String?
+
+  actorType  String?              // e.g., "USER", "ADMIN", "SYSTEM"
+  action     String               // short action description
+  entity     String               // entity affected e.g., "Goal", "Order"
+  entityId   String?
+  changes    Json?                // diff / details
+  ip         String?
+  userAgent  String?
+
+  // Relations
+  actor User? @relation("ActorAuditLogs", fields: [actorId], references: [id], onDelete: Cascade)
+  user  User? @relation("AuditLogUser",    fields: [userId],  references: [id], onDelete: Cascade)
+
+  createdAt DateTime @default(now())
+
+  // Indexes
+  @@index([actorId])
+  @@index([entity, entityId])
+  @@index([createdAt])
+}
+
+
+// Escrow Account (for holding payments)
+model Escrow {
+  id          String       @id @default(cuid())
+  goalId      String?      @unique     // one-to-one with Goal
+  orderId     String?
+  amount      Decimal      @db.Decimal(18, 2)
+  currency    String       @default("PKR")
+  status      EscrowStatus @default(HELD)
+  heldSince   DateTime     @default(now())
+  releasedAt  DateTime?
+  releasedBy  String?      // admin or system actor id
+  notes       String?
+
+  // Relations
+  goal  Goal?  @relation("GoalEscrow", fields: [goalId], references: [id], onDelete: Cascade)
+  order Order? @relation(fields: [orderId], references: [id], onDelete: Cascade)
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  // Indexes
+  @@index([goalId])
+  @@index([orderId])
+  @@index([status])
+}
+
+// Transaction: stores payment attempts and results (stripe/webhook references)
+model Transaction {
+  id                  String            @id @default(cuid())
+  userId              String?
+  orderId             String?
+  goalId              String?
+  amount              Decimal           @db.Decimal(18, 2)
+  currency            String            @default("PKR")
+  provider            String            // e.g., "stripe"
+  providerPaymentId   String?           // provider's payment / charge id
+  status              TransactionStatus @default(PENDING)
+  metadata            Json?
+
+  // Relations
+  user  User?  @relation(fields: [userId], references: [id], onDelete: Cascade)
+  order Order? @relation(fields: [orderId], references: [id], onDelete: Cascade)
+  goal  Goal?  @relation(fields: [goalId], references: [id], onDelete: Cascade)
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  // Indexes
+  @@index([userId])
+  @@index([orderId])
+  @@index([goalId])
+  @@index([providerPaymentId])
+  @@index([status])
+}
+
+// Invoice: generated for transactions / goal deposits / final redemptions
+model Invoice {
+  id            String        @id @default(cuid())
+  invoiceNumber String        @unique
+  userId        String
+  orderId       String?
+  goalId        String?
+  amount        Decimal       @db.Decimal(18, 2)
+  currency      String        @default("PKR")
+  status        InvoiceStatus @default(DRAFT)
+  issuedAt      DateTime      @default(now())
+  dueAt         DateTime?
+  paidAt        DateTime?
+  pdfUrl        String?
+  metadata      Json?
+
+  // Relations
+  user  User  @relation(fields: [userId], references: [id], onDelete: Cascade)
+  order Order? @relation(fields: [orderId], references: [id])
+  goal  Goal?  @relation(fields: [goalId], references: [id])
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  // Indexes
+  @@index([userId])
+  @@index([orderId])
+  @@index([goalId])
+  @@index([invoiceNumber])
+  @@index([status])
+}
+
+// RefundRequest: tracks user-initiated refund / cancellation requests
+model RefundRequest {
+  id           String       @id @default(cuid())
+  userId       String
+  goalId       String?      @unique                  // one-to-one with Goal
+  orderId      String?
+  amount       Decimal      @db.Decimal(18, 2)
+  reason       String
+  status       RefundStatus @default(REQUESTED)
+  adminId      String?      // admin who processed
+  processedAt  DateTime?
+  responseNote String?
+
+  // Relations
+  user  User  @relation(fields: [userId], references: [id], onDelete: Cascade)
+  goal  Goal? @relation("GoalRefundRequest", fields: [goalId], references: [id])
+  order Order? @relation(fields: [orderId], references: [id])
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  // Indexes
+  @@index([userId])
+  @@index([goalId])
+  @@index([orderId])
+  @@index([status])
+}
+
+// DeliveryTracking: captures periodic GPS updates for deliveries
+model DeliveryTracking {
+  id          String   @id @default(cuid())
+  deliveryId  String
+  latitude    Decimal  @db.Decimal(10, 7)
+  longitude   Decimal  @db.Decimal(10, 7)
+  location    String?
+  status      String?   // optional snapshot of delivery.status
+  recordedAt  DateTime  @default(now())
+
+  // Relations
+  delivery Delivery @relation(fields: [deliveryId], references: [id], onDelete: Cascade)
+
+  // Indexes
+  @@index([deliveryId])
+  @@index([recordedAt])
+}
