@@ -1,26 +1,46 @@
-import { PlusIcon, SquarePenIcon, XIcon, TruckIcon, CreditCardIcon, ShieldCheckIcon } from 'lucide-react'
-import React, { useState } from 'react'
-import AddressModal from './AddressModal'
-import { useDispatch, useSelector } from 'react-redux'
+import { XIcon, CreditCardIcon, ShieldCheckIcon, TargetIcon } from 'lucide-react'
+import React, { useState, useEffect } from 'react'
+import { useDispatch } from 'react-redux'
 import toast from 'react-hot-toast'
 import { useRouter } from 'next/navigation'
 import { Protect, useUser, useAuth } from '@clerk/nextjs'
 import axios from 'axios'
 
 const OrderSummary = ({ totalPrice, items }) => {
-  const {user} = useUser()
+  const { user } = useUser()
   const { getToken } = useAuth()
   const dispatch = useDispatch()
 
-  const currency = process.env.NEXT_PUBLIC_CURRENCY_SYMBOL || '$'
+  // ✅ FIX: Changed default currency to 'Rs'
+  const currency = process.env.NEXT_PUBLIC_CURRENCY_SYMBOL || 'Rs '
   const router = useRouter()
-  const addressList = useSelector((state) => state.address?.list || [])
 
   const [paymentMethod, setPaymentMethod] = useState('STRIPE')
-  const [selectedAddress, setSelectedAddress] = useState(null)
-  const [showAddressModal, setShowAddressModal] = useState(false)
   const [couponCodeInput, setCouponCodeInput] = useState('')
   const [coupon, setCoupon] = useState(null)
+  
+  // Goals State
+  const [goals, setGoals] = useState([])
+  const [selectedGoal, setSelectedGoal] = useState('')
+  const [depositAmount, setDepositAmount] = useState('')
+
+  // Fetch Goals
+  useEffect(() => {
+    const fetchGoals = async () => {
+      if (!user) return
+      try {
+        const token = await getToken()
+        const { data } = await axios.get('/api/goals', {
+            headers: { Authorization: `Bearer ${token}` }
+        })
+        const activeGoals = (data.goals || []).filter(g => g.status !== 'COMPLETED');
+        setGoals(activeGoals)
+      } catch (error) {
+        console.error("Failed to fetch goals", error)
+      }
+    }
+    fetchGoals()
+  }, [user, getToken])
 
   const handleCouponCode = async (event) => {
     event.preventDefault()
@@ -49,23 +69,23 @@ const OrderSummary = ({ totalPrice, items }) => {
     e.preventDefault()
     try {
         if(!user){
-          return toast('Please login to place an order')
+          return toast('Please login to proceed')
         }
-        if(!selectedAddress){
-          return toast('Please select an address')
-        }
+        
         const token = await getToken();
 
         const orderData = {
-          addressId: selectedAddress.id,
           items,
-          paymentMethod
+          paymentMethod,
+          goalId: selectedGoal || null,
+          depositAmount: selectedGoal ? Number(depositAmount) : 0,
+          addressId: null 
         }
 
         if(coupon){
           orderData.couponCode = coupon.code
         }
-        // create order
+        
         const {data} = await axios.post('/api/orders', orderData, {
           headers: { Authorization: `Bearer ${token}` }
         })
@@ -75,7 +95,6 @@ const OrderSummary = ({ totalPrice, items }) => {
         } else {
           toast.success(data.message)
           router.push('/orders')
-          dispatch(fetchCart({getToken}))
         }
     } catch (error) {
       toast.error(error?.response?.data?.error || error.message)
@@ -84,18 +103,17 @@ const OrderSummary = ({ totalPrice, items }) => {
 
   // Calculate totals
   const discount = coupon ? (coupon.discount / 100) * totalPrice : 0
-  const baseTotal = totalPrice - discount
-  const nonPlusShipping = 5
-  const plusShipping = 0
+  const cartTotal = totalPrice - discount
+  const extraDeposit = selectedGoal ? (Number(depositAmount) || 0) : 0
+  const finalTotal = cartTotal + extraDeposit
 
   return (
     <div className='w-full max-w-lg lg:max-w-[400px] bg-gradient-to-br from-white to-slate-50/80 border border-slate-100 text-slate-700 rounded-2xl p-6 shadow-lg shadow-slate-200/50 hover:shadow-slate-300/50 transition-all duration-300'>
       {/* Header */}
       <div className='text-center mb-6'>
         <h2 className='text-2xl font-bold bg-gradient-to-r from-blue-600 to-purple-600 bg-clip-text text-transparent'>
-          Order Summary
+          Goal Pay
         </h2>
-        <p className='text-slate-500 text-sm mt-1'>Review your purchase details</p>
       </div>
 
       {/* Payment Method */}
@@ -123,61 +141,54 @@ const OrderSummary = ({ totalPrice, items }) => {
         </div>
       </div>
 
-      {/* Address Section */}
+      {/* Goal Selection Section */}
       <div className='mb-6 p-4 bg-white rounded-xl border border-slate-100 shadow-sm'>
         <div className='flex items-center gap-2 mb-3'>
-          <TruckIcon className='text-blue-600' size={18} />
-          <p className='font-semibold text-slate-700'>Delivery Address</p>
+          <TargetIcon className='text-blue-600' size={18} />
+          <p className='font-semibold text-slate-700'>Saving Goals</p>
         </div>
         
-        {selectedAddress ? (
-          <div className='p-3 bg-green-50 border border-green-200 rounded-lg'>
-            <div className='flex justify-between items-start'>
-              <div className='flex-1'>
-                <p className='font-medium text-green-800 text-sm'>{selectedAddress.name}</p>
-                <p className='text-xs text-green-700 mt-1'>
-                  {selectedAddress.street}, {selectedAddress.city}, {selectedAddress.state} {selectedAddress.zip}
-                </p>
-              </div>
-              <button
-                onClick={() => setSelectedAddress(null)}
-                className='p-1 hover:bg-green-200 rounded-lg transition-colors'
-              >
-                <SquarePenIcon className='text-green-600' size={16} />
-              </button>
-            </div>
-          </div>
+        {goals.length > 0 ? (
+           <div className='space-y-3'>
+             <div className='relative'>
+               <select
+                 className='w-full p-3 border border-slate-300 rounded-lg bg-white focus:border-blue-500 focus:ring-2 focus:ring-blue-200 outline-none transition-all text-sm'
+                 onChange={(e) => {
+                    setSelectedGoal(e.target.value)
+                    if(!e.target.value) setDepositAmount('')
+                 }}
+                 value={selectedGoal}
+               >
+                 <option value=''>Select Goal</option>
+                 {goals.map((goal) => (
+                   <option key={goal.id} value={goal.id}>
+                     {goal.product?.name || "Unnamed Goal"}
+                   </option>
+                 ))}
+               </select>
+             </div>
+
+             {selectedGoal && (
+               <div className="relative animate-in fade-in slide-in-from-top-2 duration-300">
+                  <label className="text-xs text-slate-500 mb-1 block pl-1">Add Deposit Amount</label>
+                  <div className="flex items-center border border-slate-300 rounded-lg overflow-hidden focus-within:ring-2 focus-within:ring-blue-200 focus-within:border-blue-500">
+                    <span className="pl-3 text-slate-500 text-sm font-medium">{currency}</span>
+                    <input 
+                      type="number" 
+                      min="1"
+                      placeholder="0.00"
+                      value={depositAmount}
+                      onChange={(e) => setDepositAmount(e.target.value)}
+                      className="w-full p-2.5 outline-none text-sm text-slate-700 placeholder:text-slate-400"
+                    />
+                  </div>
+               </div>
+             )}
+           </div>
         ) : (
-          <div className='space-y-3'>
-            {addressList.length > 0 ? (
-              <div className='relative'>
-                <select
-                  className='w-full p-3 border border-slate-300 rounded-lg bg-white focus:border-blue-500 focus:ring-2 focus:ring-blue-200 outline-none transition-all text-sm'
-                  onChange={(e) => setSelectedAddress(addressList[e.target.value])}
-                >
-                  <option value=''>Choose a delivery address</option>
-                  {addressList.map((address, index) => (
-                    <option key={index} value={index}>
-                      {address.name}, {address.city}, {address.state}
-                    </option>
-                  ))}
-                </select>
-              </div>
-            ) : (
-              <div className='text-center py-4 border-2 border-dashed border-slate-300 rounded-lg'>
-                <p className='text-slate-500 text-sm'>No saved addresses found</p>
-                <p className='text-slate-400 text-xs mt-1'>Add your delivery address to continue</p>
-              </div>
-            )}
-            
-            <button
-              className='w-full flex items-center justify-center gap-2 bg-blue-600 text-white py-3 rounded-lg hover:bg-blue-700 active:scale-[0.98] transition-all font-medium text-sm'
-              onClick={() => setShowAddressModal(true)}
-            >
-              <PlusIcon size={18} /> 
-              Add New Address
-            </button>
-          </div>
+            <div className='text-center py-3 border-2 border-dashed border-slate-200 rounded-lg'>
+                <p className='text-slate-400 text-xs'>No active goals found</p>
+            </div>
         )}
       </div>
 
@@ -190,16 +201,13 @@ const OrderSummary = ({ totalPrice, items }) => {
             <span className='text-slate-600'>Subtotal</span>
             <span className='font-medium'>{currency}{totalPrice.toLocaleString()}</span>
           </div>
-
-          <div className='flex justify-between items-center'>
-            <span className='text-slate-600'>Shipping</span>
-            <Protect
-              plan='plus'
-              fallback={<span className='font-medium'>{currency}{nonPlusShipping.toFixed(2)}</span>}
-            >
-              <span className='text-green-600 font-medium'>FREE</span>
-            </Protect>
-          </div>
+          
+          {selectedGoal && depositAmount > 0 && (
+            <div className='flex justify-between items-center text-blue-600'>
+              <span>Goal Deposit</span>
+              <span className='font-medium'>+{currency}{Number(depositAmount).toFixed(2)}</span>
+            </div>
+          )}
 
           {coupon && (
             <div className='flex justify-between items-center text-green-600'>
@@ -251,12 +259,12 @@ const OrderSummary = ({ totalPrice, items }) => {
           <Protect
             fallback={
               <span className='text-white font-bold text-lg'>
-                {currency}{(baseTotal + nonPlusShipping).toFixed(2)}
+                {currency}{finalTotal.toFixed(2)}
               </span>
             }
           >
             <span className='text-white font-bold text-lg'>
-              {currency}{baseTotal.toFixed(2)}
+              {currency}{finalTotal.toFixed(2)}
             </span>
           </Protect>
         </div>
@@ -270,7 +278,7 @@ const OrderSummary = ({ totalPrice, items }) => {
         onClick={handlePlaceOrder}
         className='w-full bg-gradient-to-r from-blue-700 to-purple-700 text-white py-4 rounded-xl hover:shadow-xl active:scale-[0.98] transition-all font-bold text-sm shadow-lg shadow-blue-500/25'
       >
-        Place Order Securely
+        Pay Securely
       </button>
 
       {/* Trust Badges */}
@@ -280,18 +288,10 @@ const OrderSummary = ({ totalPrice, items }) => {
           <span>Secure</span>
         </div>
         <div className='flex items-center gap-1 text-slate-500 text-xs'>
-          <TruckIcon size={14} />
-          <span>Fast Delivery</span>
-        </div>
-        <div className='flex items-center gap-1 text-slate-500 text-xs'>
           <CreditCardIcon size={14} />
           <span>Protected</span>
         </div>
       </div>
-
-      {showAddressModal && (
-        <AddressModal setShowAddressModal={setShowAddressModal} />
-      )}
     </div>
   )
 }

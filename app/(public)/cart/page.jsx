@@ -5,9 +5,9 @@ import { useSelector, useDispatch } from "react-redux";
 import { useRouter } from "next/navigation";
 import Image from "next/image";
 import Counter from "@/components/Counter";
-import OrderSummary from "@/components/OrderSummary";
+// REMOVED: import OrderSummary from "@/components/OrderSummary";
 import { deleteItemFromCart } from "@/lib/features/cart/cartSlice";
-import { Trash2Icon } from "lucide-react";
+import { Trash2Icon, CheckCircleIcon } from "lucide-react"; 
 
 export default function CartPage() {
   const currency = process.env.NEXT_PUBLIC_CURRENCY_SYMBOL || "Rs";
@@ -17,38 +17,45 @@ export default function CartPage() {
   const router = useRouter();
 
   const [cartArray, setCartArray] = useState([]);
-  const [totalPrice, setTotalPrice] = useState(0);
   const [goals, setGoals] = useState([]);
   const [loadingGoals, setLoadingGoals] = useState(true);
   const [processingGoalId, setProcessingGoalId] = useState(null);
 
-  // Prepare cart array and total
+  // ================= CART LOGIC =================
   const createCartArray = () => {
-    let total = 0;
     const arr = [];
     for (const [productId, qty] of Object.entries(cartItems)) {
       const product = products.find(p => p.id === productId);
       if (product) {
         arr.push({ ...product, quantity: qty });
-        total += product.price * qty;
       }
     }
     setCartArray(arr);
-    setTotalPrice(total);
   };
 
-  // Delete cart item
   const handleDeleteItemFromCart = (productId) => {
     dispatch(deleteItemFromCart({ productId }));
   };
 
-  // Fetch user goals from backend
+  // ================= GOAL LOGIC =================
+  
+  // 1. Fetch Goals
   const fetchGoals = async () => {
     try {
       setLoadingGoals(true);
       const res = await fetch("/api/set-goal");
       const data = await res.json();
-      setGoals(data.goals || []);
+      
+      // Manually calculate 'saved' from deposits list
+      const calculatedGoals = (data.goals || []).map(goal => {
+         const totalSaved = (goal.deposits || []).reduce((sum, dep) => sum + Number(dep.amount), 0);
+         return {
+           ...goal,
+           saved: totalSaved
+         };
+      });
+
+      setGoals(calculatedGoals);
     } catch (err) {
       console.error("Error fetching goals:", err);
     } finally {
@@ -56,18 +63,41 @@ export default function CartPage() {
     }
   };
 
-  // Start deposit for a goal (Stripe only)
+  // 2. Delete Goal (Database)
+  const handleDeleteGoal = async (goalId) => {
+    if (!confirm("Are you sure you want to delete this goal? This cannot be undone.")) return;
+
+    try {
+      const res = await fetch(`/api/goals/${goalId}`, { 
+        method: "DELETE" 
+      });
+      
+      if (res.ok) {
+        setGoals(prev => prev.filter(g => g.id !== goalId));
+      } else {
+        const data = await res.json();
+        alert(data.error || "Failed to delete goal");
+      }
+    } catch (err) {
+      console.error("Error deleting goal:", err);
+      alert("Something went wrong");
+    }
+  };
+
+  // 3. Deposit (Stripe)
   const handleDeposit = async (goal) => {
+    if (goal.status === "COMPLETED") return;
+
     try {
       setProcessingGoalId(goal.id);
       const res = await fetch("/api/stripe-deposit", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ goalId: goal.id, amount: 100 }) // Example: fixed deposit or ask user input
+        body: JSON.stringify({ goalId: goal.id, amount: 100 }) 
       });
       const data = await res.json();
       if (!res.ok) throw new Error(data.error || "Stripe checkout failed");
-      window.location.href = data.checkoutUrl; // redirect to Stripe
+      window.location.href = data.checkoutUrl; 
     } catch (err) {
       alert(err.message);
     } finally {
@@ -75,11 +105,12 @@ export default function CartPage() {
     }
   };
 
-  // Navigate to goal page
+  // 4. Navigate
   const handleGoalClick = (goal) => {
     router.push(`/goals/${goal.id}`);
   };
 
+  // ================= EFFECTS =================
   useEffect(() => {
     if (products.length > 0) createCartArray();
   }, [cartItems, products]);
@@ -88,16 +119,18 @@ export default function CartPage() {
     fetchGoals();
   }, []);
 
+  // ================= RENDER =================
   return (
     <div className="min-h-screen bg-gradient-to-b from-slate-100 via-white to-slate-200 text-slate-800">
-      <div className="max-w-7xl mx-auto px-4 sm:px-6 py-14">
+      <div className="max-w-6xl mx-auto px-4 sm:px-6 py-14">
         <h1 className="text-4xl sm:text-5xl font-bold text-center mb-6">
           My <span className="text-emerald-600">DreamSaver</span> Cart & Goals
         </h1>
 
-        <div className="flex flex-col lg:flex-row gap-8">
-          {/* Cart Section */}
-          <div className="flex-1 bg-white/80 backdrop-blur-md shadow-lg border border-slate-200 rounded-2xl overflow-x-auto p-6">
+        <div className="flex flex-col gap-8">
+          
+          {/* ---------------- CART SECTION ---------------- */}
+          <div className="bg-white/80 backdrop-blur-md shadow-lg border border-slate-200 rounded-2xl overflow-x-auto p-6">
             <h2 className="text-lg font-semibold mb-4">Cart Items</h2>
             {cartArray.length > 0 ? (
               <table className="w-full text-slate-700 min-w-[640px]">
@@ -140,53 +173,148 @@ export default function CartPage() {
             )}
           </div>
 
-          {/* Goals Section */}
-          <div className="flex-1 bg-white/80 backdrop-blur-md shadow-lg border border-slate-200 rounded-2xl p-6">
-            <h2 className="text-lg font-semibold mb-4">Started Goals</h2>
+          {/* ---------------- GOALS SECTION ---------------- */}
+          <div className="bg-white/80 backdrop-blur-md shadow-lg border border-slate-200 rounded-2xl p-6">
+            <div className="flex items-center justify-between mb-6">
+              <h2 className="text-xl font-bold text-slate-800">Started Goals</h2>
+              <span className="bg-emerald-100 text-emerald-700 text-xs font-bold px-3 py-1 rounded-full">
+                {goals.length} Active
+              </span>
+            </div>
+
             {loadingGoals ? (
-              <p>Loading goals...</p>
-            ) : goals.length > 0 ? (
-              <div className="flex flex-col gap-4">
-                {goals.map(goal => (
-                  <div key={goal.id} className="p-4 border rounded-lg bg-slate-50 flex justify-between items-center cursor-pointer hover:bg-slate-100 transition-all">
-                    <div onClick={() => handleGoalClick(goal)}>
-                      <p className="font-semibold text-slate-800">{goal.product?.name}</p>
-                      <p className="text-sm text-slate-500">
-                        Saved: {goal.saved} / Target: {goal.targetAmount}
-                      </p>
-                    </div>
-                    <div className="flex items-center gap-2">
-                      {goal.status === "STARTED" ? (
-                        <button
-                          onClick={() => handleDeposit(goal)}
-                          disabled={processingGoalId === goal.id}
-                          className="px-4 py-2 bg-green-600 text-white rounded hover:bg-green-700"
-                        >
-                          {processingGoalId === goal.id ? "Processing…" : "Add Deposit"}
-                        </button>
-                      ) : (
-                        <button
-                          onClick={() => handleDeleteItemFromCart(goal.productId)}
-                          className="px-4 py-2 bg-red-500 text-white rounded hover:bg-red-600"
-                        >
-                          Delete
-                        </button>
-                      )}
-                      <span className="font-semibold text-emerald-700">
-                        {Math.round((goal.saved / goal.targetAmount) * 100)}%
-                      </span>
-                    </div>
-                  </div>
+              <div className="animate-pulse space-y-4">
+                {[1, 2].map((i) => (
+                  <div key={i} className="h-24 bg-slate-100 rounded-xl"></div>
                 ))}
               </div>
-            ) : (
-              <p className="text-slate-500">You have no started goals yet.</p>
-            )}
-          </div>
+            ) : goals.length > 0 ? (
+              <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                {goals.map((goal) => {
+                  const percent = Math.min(Math.round((goal.saved / goal.targetAmount) * 100), 100);
+                  const isCompleted = goal.status === "COMPLETED" || percent >= 100;
 
-          {/* Order Summary */}
-          <div className="w-full lg:w-1/3">
-            <OrderSummary totalPrice={totalPrice} items={cartArray}/>
+                  return (
+                    <div
+                      key={goal.id}
+                      onClick={() => !isCompleted && handleGoalClick(goal)}
+                      className={`group relative p-4 border rounded-xl transition-all duration-300 ${
+                        isCompleted
+                          ? "bg-green-50/50 border-green-200"
+                          : "bg-white border-slate-200 hover:border-emerald-300 hover:shadow-md cursor-pointer"
+                      }`}
+                    >
+                      {/* Top Row: Image + Info + Percentage */}
+                      <div className="flex gap-4 items-start">
+                        {/* Product Image Thumbnail */}
+                        <div className="h-16 w-16 bg-slate-100 rounded-lg overflow-hidden flex-shrink-0 border border-slate-200">
+                           {goal.product?.images?.[0] ? (
+                              <Image 
+                                src={goal.product.images[0]} 
+                                alt={goal.product.name} 
+                                width={64} 
+                                height={64} 
+                                className="object-cover w-full h-full"
+                              />
+                           ) : (
+                              <div className="w-full h-full flex items-center justify-center text-slate-400">
+                                <span className="text-xs">No Img</span>
+                              </div>
+                           )}
+                        </div>
+
+                        {/* Text Info */}
+                        <div className="flex-1 min-w-0">
+                          <div className="flex justify-between items-start">
+                            <h3 className="font-semibold text-slate-800 truncate pr-2">
+                              {goal.product?.name || "Unknown Product"}
+                            </h3>
+                            {/* Percentage Badge */}
+                            <span className={`text-xs font-bold px-2 py-1 rounded-md whitespace-nowrap ${
+                              isCompleted 
+                                ? "bg-green-200 text-green-800" 
+                                : "bg-slate-100 text-slate-600 group-hover:bg-emerald-100 group-hover:text-emerald-700"
+                            }`}>
+                              {percent}%
+                            </span>
+                          </div>
+                          
+                          <p className="text-xs text-slate-500 mt-1">
+                            Target: {currency}{Number(goal.targetAmount).toLocaleString()}
+                          </p>
+
+                          {/* Progress Bar */}
+                          <div className="mt-3 h-2 w-full bg-slate-100 rounded-full overflow-hidden">
+                            <div 
+                              className={`h-full rounded-full transition-all duration-500 ${
+                                isCompleted ? "bg-green-500" : "bg-emerald-500"
+                              }`}
+                              style={{ width: `${percent}%` }}
+                            />
+                          </div>
+                        </div>
+                      </div>
+
+                      {/* Bottom Row: Actions */}
+                      <div className="flex items-center justify-between mt-4 pt-3 border-t border-slate-100/60">
+                         <div className="text-sm font-medium text-slate-600">
+                            Saved: <span className={isCompleted ? "text-green-700" : "text-emerald-700"}>
+                               {currency}{Number(goal.saved).toLocaleString()}
+                            </span>
+                         </div>
+
+                         <div className="flex items-center gap-2">
+                            {isCompleted ? (
+                               <div className="flex items-center gap-1.5 text-green-700 text-sm font-bold bg-green-100 px-3 py-1.5 rounded-lg">
+                                  <CheckCircleIcon size={16} />
+                                  <span>Completed</span>
+                               </div>
+                            ) : (
+                               <>
+                                  {/* Delete Button */}
+                                  <button
+                                    onClick={(e) => {
+                                      e.stopPropagation();
+                                      handleDeleteGoal(goal.id);
+                                    }}
+                                    className="p-2 text-slate-400 hover:text-red-500 hover:bg-red-50 rounded-lg transition-colors"
+                                    title="Delete Goal"
+                                  >
+                                    <Trash2Icon size={18} />
+                                  </button>
+
+                                  {/* Deposit Button */}
+                                  <button
+                                    onClick={(e) => {
+                                      e.stopPropagation();
+                                      handleDeposit(goal);
+                                    }}
+                                    disabled={processingGoalId === goal.id}
+                                    className="flex items-center gap-2 px-4 py-1.5 bg-slate-900 text-white text-sm font-medium rounded-lg hover:bg-emerald-600 transition-all shadow-sm active:scale-95 disabled:bg-slate-300 disabled:scale-100"
+                                  >
+                                    {processingGoalId === goal.id ? (
+                                      <span className="flex items-center gap-2">
+                                        <span className="w-3 h-3 border-2 border-white/30 border-t-white rounded-full animate-spin"/>
+                                        Processing
+                                      </span>
+                                    ) : (
+                                      "Add Deposit"
+                                    )}
+                                  </button>
+                                </>
+                            )}
+                         </div>
+                      </div>
+                    </div>
+                  );
+                })}
+              </div>
+            ) : (
+              <div className="text-center py-10 bg-slate-50/50 rounded-xl border border-dashed border-slate-200">
+                <p className="text-slate-500">You have no started goals yet.</p>
+                <p className="text-xs text-slate-400 mt-1">Add a product to cart to start saving!</p>
+              </div>
+            )}
           </div>
         </div>
       </div>

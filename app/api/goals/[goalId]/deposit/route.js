@@ -5,8 +5,10 @@ import Stripe from "stripe";
 
 const stripe = new Stripe(process.env.STRIPE_SECRET_KEY);
 
-export async function POST(req, { params }) {
-  const { goalId } = params;
+export async function POST(req, context) {
+  // ✅ FIX 1: Await params for Next.js 15
+  const { goalId } = await context.params;
+  
   const { userId } = getAuth(req);
 
   if (!userId)
@@ -36,7 +38,7 @@ export async function POST(req, { params }) {
       line_items: [
         {
           price_data: {
-            currency: "usd",
+            currency: "pkr", // Changed to PKR (assuming Pakistan based on context), or keep 'usd' if intended
             product_data: {
               name: goal.product?.name || "Savings Goal Deposit",
             },
@@ -45,7 +47,8 @@ export async function POST(req, { params }) {
           quantity: 1,
         },
       ],
-      success_url: `${process.env.NEXT_PUBLIC_URL}/goals/${goalId}?payment=success`,
+      // ✅ FIX 2: Added '&amount=${numericAmount}' so frontend can read it
+      success_url: `${process.env.NEXT_PUBLIC_URL}/goals/${goalId}?payment=success&amount=${numericAmount}`,
       cancel_url: `${process.env.NEXT_PUBLIC_URL}/goals/${goalId}?payment=cancel`,
     });
 

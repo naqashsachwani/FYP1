@@ -6,139 +6,127 @@ import Stripe from "stripe";
 
 export async function POST(request) {
   try {
-    const { userId, has } = getAuth(request);
+    const { userId } = getAuth(request);
     if (!userId) {
       return NextResponse.json({ error: "Not authorized" }, { status: 401 });
     }
 
-    const { addressId, items, couponCode, paymentMethod } = await request.json();
+    const { addressId, items, couponCode, paymentMethod, goalId, depositAmount } = await request.json();
 
-    // Check for missing order details
-    if (!addressId || !paymentMethod || !items || !Array.isArray(items) || items.length === 0) {
-      return NextResponse.json({ error: "Missing order details" }, { status: 400 });
+    // Allow checkout if items exist OR a deposit amount exists
+    if ((!items || items.length === 0) && (!depositAmount || depositAmount <= 0)) {
+      return NextResponse.json({ error: "Cart is empty and no deposit amount set" }, { status: 400 });
     }
 
-    // Handle coupon logic
+    // Handle coupon
     let coupon = null;
     if (couponCode) {
-      coupon = await prisma.coupon.findFirst({
-        where: { code: couponCode },
-      });
-
-      if (!coupon) {
-        return NextResponse.json({ error: "Invalid or expired coupon" }, { status: 400 });
-      }
+      coupon = await prisma.coupon.findFirst({ where: { code: couponCode } });
     }
 
-    // Check coupon for new users
-    if (couponCode && coupon.forNewUser) {
-      const userOrders = await prisma.order.findMany({ where: { userId } });
-      if (userOrders.length > 0) {
-        return NextResponse.json({ error: "Coupon valid for new users only" }, { status: 400 });
-      }
-    }
-
-    // Check if user is Plus member
-    const isPlusMember = has({ plan: "plus" });
-
-    // Check coupon for Plus members
-    if (couponCode && coupon.forMember && !isPlusMember) {
-      return NextResponse.json({ error: "Coupon valid for members only" }, { status: 400 });
-    }
-
-    // Group products by storeId
+    // Group items by store
     const orderByStore = new Map();
-
-    for (const item of items) {
-      const product = await prisma.product.findUnique({ where: { id: item.id } });
-      if (!product) continue;
-
-      const storeId = product.storeId;
-      if (!orderByStore.has(storeId)) {
-        orderByStore.set(storeId, []);
+    if (items && Array.isArray(items)) {
+      for (const item of items) {
+        const product = await prisma.product.findUnique({ where: { id: item.id } });
+        if (!product) continue;
+        const storeId = product.storeId;
+        if (!orderByStore.has(storeId)) orderByStore.set(storeId, []);
+        orderByStore.get(storeId).push({ ...item, price: product.price });
       }
-      orderByStore.get(storeId).push({ ...item, price: product.price });
     }
 
     let orderIds = [];
     let fullAmount = 0;
-    let isShippingFeeAdded = false;
+    if (depositAmount) fullAmount += Number(depositAmount);
 
-    // Create order per store
+    // Create Orders in DB
     for (const [storeId, sellerItems] of orderByStore.entries()) {
       let total = sellerItems.reduce((acc, item) => acc + item.price * item.quantity, 0);
-
-      if (couponCode) {
-        total -= (total * coupon.discount) / 100;
-      }
-
-      if (!isPlusMember && !isShippingFeeAdded) {
-        total += 250; // add shipping once
-        isShippingFeeAdded = true;
-      }
-
+      if (coupon) total -= (total * coupon.discount) / 100;
       fullAmount += parseFloat(total.toFixed(2));
 
-      const order = await prisma.order.create({
-        data: {
-          userId,
-          storeId,
-          addressId,
-          total: parseFloat(total.toFixed(2)),
-          paymentMethod,
-          isCouponUsed: !!coupon,
-          coupon: coupon ? coupon : {},
-          orderItems: {
-            create: sellerItems.map((item) => ({
-              productId: item.id,
-              quantity: item.quantity,
-              price: item.price,
-            })),
-          },
+      const orderData = {
+        userId,
+        storeId,
+        total: parseFloat(total.toFixed(2)),
+        paymentMethod,
+        isCouponUsed: !!coupon,
+        coupon: coupon ? coupon : {},
+        orderItems: {
+          create: sellerItems.map((item) => ({
+            productId: item.id,
+            quantity: item.quantity,
+            price: item.price,
+          })),
         },
-      });
+      };
+      if (addressId) orderData.addressId = addressId;
 
+      const order = await prisma.order.create({ data: orderData });
       orderIds.push(order.id);
     }
 
-    // ✅ Handle Stripe Payments
+    // ✅ STRIPE HANDLER
     if (paymentMethod === "STRIPE") {
       const stripe = new Stripe(process.env.STRIPE_SECRET_KEY);
       const origin = request.headers.get("origin");
 
+      const line_items = [];
+
+      // 1. Add Items
+      if (items) {
+        for (const [storeId, sellerItems] of orderByStore.entries()) {
+             sellerItems.forEach(item => {
+                 line_items.push({
+                    price_data: {
+                      currency: "pkr", // ✅ PKR Currency
+                      product_data: { name: item.name },
+                      unit_amount: Math.round(item.price * 100),
+                    },
+                    quantity: item.quantity,
+                 });
+             });
+        }
+      }
+
+      // 2. Add Deposit
+      if (depositAmount > 0) {
+        line_items.push({
+          price_data: {
+            currency: "pkr", // ✅ PKR Currency
+            product_data: { name: "Savings Goal Deposit" },
+            unit_amount: Math.round(depositAmount * 100),
+          },
+          quantity: 1,
+        });
+      }
+
       try {
         const session = await stripe.checkout.sessions.create({
           payment_method_types: ["card"],
-          line_items: [
-            {
-              price_data: {
-                currency: "usd",
-                product_data: {
-                  name: "Order",
-                },
-                unit_amount: Math.round(fullAmount * 100), // amount in cents
-              },
-              quantity: 1,
-            },
-          ],
-          expires_at: Math.floor(Date.now() / 1000) + 30 * 60, // 30 mins
+          line_items,
+          expires_at: Math.floor(Date.now() / 1000) + 30 * 60,
           mode: "payment",
-          success_url: `${origin}/loading?nextUrl=orders`,
-          cancel_url: `${origin}/cart`,
+          // ✅ FIX: Redirect to Cart Page on Success
+          success_url: `${origin}/cart?payment=success`, 
+          cancel_url: `${origin}/cart?payment=cancelled`,
           metadata: {
             orderIds: orderIds.join(","),
             userId,
+            goalId: goalId || "",
+            depositAmount: depositAmount || 0,
             appId: "dreamsaver",
           },
         });
 
         return NextResponse.json({ session });
       } catch (err) {
-        console.error("Stripe error:", err);
         return NextResponse.json({ error: err.message }, { status: 500 });
       }
     }
 
+    // Clear cart if not Stripe (e.g. COD)
     await prisma.user.update({
       where: { id: userId },
       data: { cart: {} },
@@ -146,39 +134,6 @@ export async function POST(request) {
 
     return NextResponse.json({ message: "Orders placed successfully" });
   } catch (error) {
-    console.error(error);
-    return NextResponse.json({ error: error.code || error.message }, { status: 400 });
-  }
-}
-
-// ==========================
-// ✅ GET METHOD - Fetch User Orders
-// ==========================
-export async function GET(request) {
-  try {
-    const { userId } = getAuth(request);
-    if (!userId) {
-      return NextResponse.json({ error: "Not authorized" }, { status: 401 });
-    }
-
-    const orders = await prisma.order.findMany({
-      where: {
-        userId,
-        OR: [
-          { paymentMethod: PaymentMethod.COD },
-          { AND: [{ paymentMethod: PaymentMethod.STRIPE }, { isPaid: true }] },
-        ],
-      },
-      include: {
-        orderItems: { include: { product: true } },
-        address: true,
-      },
-      orderBy: { createdAt: "desc" },
-    });
-
-    return NextResponse.json({ orders });
-  } catch (error) {
-    console.error(error);
     return NextResponse.json({ error: error.message }, { status: 400 });
   }
 }

@@ -2,7 +2,8 @@ import prisma from "@/lib/prisma";
 import { NextResponse } from "next/server";
 
 export async function GET(request, context) {
-  const { productId } = context.params; // ✅ fix here
+  // ✅ FIX: Add 'await' before context.params
+  const { productId } = await context.params; 
 
   if (!productId) {
     return NextResponse.json({ error: "Product ID is required" }, { status: 400 });

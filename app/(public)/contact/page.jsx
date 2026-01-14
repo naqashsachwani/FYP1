@@ -1,84 +1,49 @@
 'use client'
 
-import { useState } from 'react'
+import { Mail, Phone, MapPin } from 'lucide-react'
 
 const Contact = () => {
-  const [formData, setFormData] = useState({ name: '', email: '', message: '' })
-  const [success, setSuccess] = useState(false)
-
-  const handleChange = (e) => {
-    const { name, value } = e.target
-    setFormData(prev => ({ ...prev, [name]: value }))
-  }
-
-  const handleSubmit = (e) => {
-    e.preventDefault()
-    console.log(formData)
-    setSuccess(true)
-    setFormData({ name: '', email: '', message: '' })
-  }
-
   return (
-    <div className="max-w-4xl mx-auto px-4 sm:px-6 lg:px-8 py-16">
-      <h1 className="text-4xl font-bold text-slate-800 mb-6 text-center">Contact Us</h1>
+    <div className="min-h-[70vh] flex items-center justify-center bg-slate-50/50">
+      <div className="max-w-6xl w-full mx-auto px-4 sm:px-6 lg:px-8 py-16">
+        
+        <h1 className="text-4xl font-extrabold text-slate-800 mb-12 text-center">
+          Contact Us
+        </h1>
 
-      <p className="text-center text-slate-600 mb-10">
-        Have questions, suggestions, or feedback? We'd love to hear from you! Fill out the form below 
-        and we will get back to you as soon as possible.
-      </p>
+        <div className="grid grid-cols-1 md:grid-cols-3 gap-8">
+          
+          {/* Email Card */}
+          <div className="bg-white p-8 rounded-2xl shadow-sm border border-slate-100 flex flex-col items-center text-center hover:shadow-md transition-all duration-300 group">
+            <div className="w-16 h-16 bg-blue-50 rounded-full flex items-center justify-center mb-6 group-hover:bg-blue-100 transition-colors">
+              <Mail className="text-blue-600" size={32} />
+            </div>
+            <h3 className="text-lg font-bold text-slate-800 mb-2">Email Support</h3>
+            <p className="text-slate-500 text-sm mb-1">Our friendly team is here to help.</p>
+            <p className="text-blue-600 font-medium">support@yourstore.com</p>
+          </div>
 
-      <form onSubmit={handleSubmit} className="max-w-xl mx-auto flex flex-col gap-6">
-        <div>
-          <label className="block text-sm font-medium text-slate-700 mb-1">Name</label>
-          <input
-            type="text"
-            name="name"
-            value={formData.name}
-            onChange={handleChange}
-            className="w-full px-4 py-2 border rounded-lg focus:ring-2 focus:ring-slate-400 focus:outline-none"
-            required
-          />
+          {/* Phone Card */}
+          <div className="bg-white p-8 rounded-2xl shadow-sm border border-slate-100 flex flex-col items-center text-center hover:shadow-md transition-all duration-300 group">
+            <div className="w-16 h-16 bg-emerald-50 rounded-full flex items-center justify-center mb-6 group-hover:bg-emerald-100 transition-colors">
+              <Phone className="text-emerald-600" size={32} />
+            </div>
+            <h3 className="text-lg font-bold text-slate-800 mb-2">Phone</h3>
+            <p className="text-slate-500 text-sm mb-1">Mon-Fri from 8am to 5pm.</p>
+            <p className="text-emerald-600 font-medium">+92 300 0000000</p>
+          </div>
+
+          {/* Address Card */}
+          <div className="bg-white p-8 rounded-2xl shadow-sm border border-slate-100 flex flex-col items-center text-center hover:shadow-md transition-all duration-300 group">
+            <div className="w-16 h-16 bg-purple-50 rounded-full flex items-center justify-center mb-6 group-hover:bg-purple-100 transition-colors">
+              <MapPin className="text-purple-600" size={32} />
+            </div>
+            <h3 className="text-lg font-bold text-slate-800 mb-2">Office</h3>
+            <p className="text-slate-500 text-sm mb-1">Come say hello at our office HQ.</p>
+            <p className="text-purple-600 font-medium">123 Street, City, Pakistan</p>
+          </div>
+
         </div>
-
-        <div>
-          <label className="block text-sm font-medium text-slate-700 mb-1">Email</label>
-          <input
-            type="email"
-            name="email"
-            value={formData.email}
-            onChange={handleChange}
-            className="w-full px-4 py-2 border rounded-lg focus:ring-2 focus:ring-slate-400 focus:outline-none"
-            required
-          />
-        </div>
-
-        <div>
-          <label className="block text-sm font-medium text-slate-700 mb-1">Message</label>
-          <textarea
-            name="message"
-            value={formData.message}
-            onChange={handleChange}
-            rows={5}
-            className="w-full px-4 py-2 border rounded-lg focus:ring-2 focus:ring-slate-400 focus:outline-none"
-            required
-          />
-        </div>
-
-        <button
-          type="submit"
-          className="px-6 py-3 bg-slate-800 text-white rounded-lg hover:bg-slate-900 transition"
-        >
-          Send Message
-        </button>
-
-        {success && <p className="text-green-600 mt-2 text-center">Message sent successfully!</p>}
-      </form>
-
-      <div className="mt-16 text-center text-slate-600">
-        <p>Or reach us at:</p>
-        <p>Email: support@yourstore.com</p>
-        <p>Phone: +92 300 0000000</p>
-        <p>Address: 123 Street, City, Pakistan</p>
       </div>
     </div>
   )
