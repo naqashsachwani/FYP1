@@ -1,6 +1,6 @@
 'use client'
 import { assets } from '@/assets/assets'
-import { ArrowRightIcon, ChevronRightIcon } from 'lucide-react'
+import { ArrowRightIcon } from 'lucide-react'
 import Image from 'next/image'
 import { useRouter } from 'next/navigation'
 import React from 'react'
@@ -36,16 +36,16 @@ const Hero = () => {
           <div className='relative z-20 p-6 sm:p-12 lg:p-16 flex items-start h-full'>
             <div className='max-w-lg w-full'> 
               
-              {/* --- UPDATED ATTRACTIVE BADGE --- */}
-              <div className='inline-flex items-center gap-3 bg-white rounded-full p-1 pr-4 shadow-lg mb-6 animate-fade-in-up border border-white/20 backdrop-blur-sm'>
-                <span className='bg-gradient-to-r from-emerald-500 to-green-600 text-white px-3 py-1 rounded-full text-[10px] sm:text-xs font-bold uppercase tracking-wide shadow-md shrink-0'>
+              {/* --- FIXED BADGE (Mobile Optimized) --- */}
+              <div className='inline-flex items-center gap-2 bg-white rounded-full p-1 pr-3 sm:gap-3 sm:pr-4 shadow-lg mb-6 animate-fade-in-up border border-white/20 backdrop-blur-sm max-w-full'>
+                <span className='bg-green-600 text-white px-2 py-0.5 rounded-full text-[10px] sm:text-xs font-bold uppercase tracking-wide shrink-0'>
                   News
                 </span>
-                <span className='text-xs sm:text-sm font-semibold text-slate-800 truncate'>
+                <span className='text-[11px] sm:text-sm font-medium text-slate-800 truncate'>
                   Free Shipping on Orders Above {currency} 5000!
                 </span>
               </div>
-              {/* -------------------------------- */}
+              {/* -------------------------------------- */}
 
               <h2 className='text-3xl sm:text-5xl lg:text-6xl font-bold text-white leading-tight drop-shadow-lg'>
                 Saving Goals for<br />
