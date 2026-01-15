@@ -31,8 +31,7 @@ function TermsModal({ open, onClose }) {
 /* ================= MAIN PAGE ================= */
 export default function SetGoalClient() {
   const { user } = useUser();
-  // const userId = user?.id; // Not used directly in rendering, relying on backend auth
-
+  
   const searchParams = useSearchParams();
   const router = useRouter();
   const productId = searchParams.get("productId");
@@ -66,39 +65,6 @@ export default function SetGoalClient() {
       .then(r => r.json())
       .then(d => setGoals(d.goals || []));
   }, [productId]);
-
-  /* ================= SAVE ONLY (Draft) ================= */
-  const saveGoal = async () => {
-    setError(null);
-    setSuccess(null);
-
-    if (!period) {
-      return setError("Please select a time period to save your goal.");
-    }
-
-    const res = await fetch("/api/set-goal", {
-      method: "POST",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({
-        productId,
-        targetAmount: product.price,
-        targetDate,
-        status: "SAVED",
-      }),
-    });
-
-    const data = await res.json();
-    if (!res.ok) return setError(data.error);
-
-    setSuccess("Goal saved successfully!");
-
-    // refresh goals list locally
-    const refreshed = await fetch("/api/set-goal", { cache: "no-store" }).then(r => r.json());
-    setGoals(refreshed.goals || []);
-
-    router.refresh(); // Refresh Next.js cache
-    setTimeout(() => router.push("/cart"), 1200);
-  };
 
   /* ================= START GOAL (Active) ================= */
   const startGoal = async () => {
@@ -197,24 +163,20 @@ export default function SetGoalClient() {
         {success && <p className="text-green-600">{success}</p>}
 
         <div className="flex gap-3">
-          <button
-            onClick={saveGoal}
-            className="w-1/2 border py-2 rounded hover:bg-gray-50"
-          >
-            Save Goal
-          </button>
-
+          {/* Save Goal Button Removed */}
+          
           <button
             onClick={startGoal}
             disabled={loading}
-            className="w-1/2 bg-black text-white py-2 rounded"
+            className="w-full bg-black text-white py-2 rounded"
           >
             {loading ? "Processing..." : "Start Goal"}
           </button>
         </div>
       </div>
 
-      {/* ================= SAVED GOALS ================= */}
+      {/* ================= SAVED GOALS (Previous Drafts) ================= */}
+      {/* We keep this list just in case they have old drafts they want to delete */}
       {goals.filter(g => g.status === "SAVED").length > 0 && (
         <div className="mt-8">
           <h2 className="font-semibold mb-2">Saved Goals</h2>
