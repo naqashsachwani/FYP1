@@ -14,8 +14,8 @@ export async function POST(request) {
   const mode = url.searchParams.get("mode");
 
   /* =====================================================
-     1️⃣ CREATE STRIPE CHECKOUT SESSION (FRONTEND)
-  ===================================================== */
+      1️⃣ CREATE STRIPE CHECKOUT SESSION (FRONTEND)
+   ===================================================== */
   if (mode === "checkout") {
     try {
       const { goalIds, userId, amount } = await request.json();
@@ -33,8 +33,13 @@ export async function POST(request) {
         line_items: [
           {
             price_data: {
-              currency: "usd",
+              // 👇 CHANGED FROM 'usd' TO 'pkr'
+              currency: "pkr", 
+              
+              // Stripe expects the smallest currency unit (paisas for PKR).
+              // amount * 100 is correct for PKR (1 PKR = 100 paisas).
               unit_amount: Math.round(Number(amount) * 100),
+              
               product_data: { name: "Goal Deposit" },
             },
             quantity: 1,
@@ -58,12 +63,11 @@ export async function POST(request) {
   }
 
   /* =====================================================
-     2️⃣ STRIPE WEBHOOK
-  ===================================================== */
+      2️⃣ STRIPE WEBHOOK
+   ===================================================== */
   try {
     const sig = request.headers.get("stripe-signature");
 
-    // 🚨 CRITICAL FIX
     if (!sig) {
       return NextResponse.json(
         { error: "Missing stripe-signature header" },
