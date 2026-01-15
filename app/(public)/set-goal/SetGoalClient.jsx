@@ -3,7 +3,6 @@
 import { useSearchParams, useRouter } from "next/navigation";
 import { useEffect, useState } from "react";
 import Image from "next/image";
-import ProgressChart from "./ProgressChart";
 import { useUser } from "@clerk/nextjs";
 
 /* ================= TERMS MODAL ================= */
@@ -68,10 +67,14 @@ export default function SetGoalClient() {
       .then(d => setGoals(d.goals || []));
   }, [productId]);
 
-  /* ================= SAVE ONLY ================= */
+  /* ================= SAVE ONLY (Draft) ================= */
   const saveGoal = async () => {
     setError(null);
     setSuccess(null);
+
+    if (!period) {
+      return setError("Please select a time period to save your goal.");
+    }
 
     const res = await fetch("/api/set-goal", {
       method: "POST",
@@ -89,55 +92,50 @@ export default function SetGoalClient() {
 
     setSuccess("Goal saved successfully!");
 
-    // refresh goals (avoid duplicate key issue)
+    // refresh goals
     const refreshed = await fetch("/api/set-goal").then(r => r.json());
     setGoals(refreshed.goals || []);
 
     setTimeout(() => router.push("/cart"), 1200);
   };
 
-  /* ================= START GOAL ================= */
+  /* ================= START GOAL (Active) ================= */
   const startGoal = async () => {
     setError(null);
+    
+    // Validation
+    if (!period) return setError("Please select a time period.");
     if (!termsAccepted) return setError("Accept terms first");
 
     setLoading(true);
 
-    const res = await fetch("/api/set-goal", {
-      method: "POST",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({
-        productId,
-        targetAmount: product.price,
-        targetDate,
-        status: "STARTED",
-      }),
-    });
+    try {
+      // 1. Create the Goal in Database (Status: ACTIVE)
+      const res = await fetch("/api/set-goal", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          productId,
+          targetAmount: product.price,
+          targetDate,
+          status: "ACTIVE", // ✅ Set directly to ACTIVE (No deposit needed)
+        }),
+      });
 
-    const data = await res.json();
-    if (!res.ok) {
+      const data = await res.json();
+      
+      if (!res.ok) {
+        throw new Error(data.error || "Failed to create goal");
+      }
+
+      // 2. Redirect directly to the Goal Details Page
+      setSuccess("Goal started! Redirecting...");
+      router.push(`/goals/${data.goal.id}`); 
+
+    } catch (err) {
       setLoading(false);
-      return setError(data.error);
+      setError(err.message);
     }
-
-    // 10% advance payment
-    const stripe = await fetch("/api/stripe?mode=checkout", {
-      method: "POST",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({
-        goalIds: [data.goal.id],
-        userId,
-        amount: product.price * 0.1,
-      }),
-    });
-
-    const stripeData = await stripe.json();
-    if (!stripe.ok) {
-      setLoading(false);
-      return setError(stripeData.error);
-    }
-
-    window.location.href = stripeData.checkoutUrl;
   };
 
   /* ================= DELETE SAVED GOAL ================= */
@@ -168,8 +166,10 @@ export default function SetGoalClient() {
           onChange={e => {
             setPeriod(e.target.value);
             setTargetDate(calcDate(e.target.value));
+            if (error === "Please select a time period to save your goal.") setError(null);
           }}
           className="w-full border p-2 rounded"
+          value={period} 
         >
           <option value="">Select period</option>
           <option value="3">3 Months</option>

@@ -1,30 +1,25 @@
+// app/api/stripe/route.js
+
 import prisma from "@/lib/prisma";
 import { NextResponse } from "next/server";
 import Stripe from "stripe";
 
 const stripe = new Stripe(process.env.STRIPE_SECRET_KEY);
 
-/**
- * POST
- * - mode=checkout → create checkout session
- * - no mode       → stripe webhook
- */
 export async function POST(request) {
   const url = new URL(request.url);
   const mode = url.searchParams.get("mode");
 
   /* =====================================================
-      1️⃣ CREATE STRIPE CHECKOUT SESSION (FRONTEND)
-   ===================================================== */
+     1️⃣ CHECKOUT SESSION CREATION
+     (This part was fine, just keeping the currency fix)
+  ===================================================== */
   if (mode === "checkout") {
     try {
       const { goalIds, userId, amount } = await request.json();
 
       if (!goalIds?.length || !userId || !amount) {
-        return NextResponse.json(
-          { error: "goalIds, userId, amount required" },
-          { status: 400 }
-        );
+        return NextResponse.json({ error: "Missing data" }, { status: 400 });
       }
 
       const session = await stripe.checkout.sessions.create({
@@ -33,13 +28,8 @@ export async function POST(request) {
         line_items: [
           {
             price_data: {
-              // 👇 CHANGED FROM 'usd' TO 'pkr'
-              currency: "pkr", 
-              
-              // Stripe expects the smallest currency unit (paisas for PKR).
-              // amount * 100 is correct for PKR (1 PKR = 100 paisas).
+              currency: "pkr", // Ensure this is PKR
               unit_amount: Math.round(Number(amount) * 100),
-              
               product_data: { name: "Goal Deposit" },
             },
             quantity: 1,
@@ -57,26 +47,18 @@ export async function POST(request) {
 
       return NextResponse.json({ checkoutUrl: session.url });
     } catch (err) {
-      console.error("Checkout error:", err);
       return NextResponse.json({ error: err.message }, { status: 500 });
     }
   }
 
   /* =====================================================
-      2️⃣ STRIPE WEBHOOK
-   ===================================================== */
+     2️⃣ WEBHOOK HANDLING (CRITICAL FIXES HERE)
+  ===================================================== */
   try {
     const sig = request.headers.get("stripe-signature");
-
-    if (!sig) {
-      return NextResponse.json(
-        { error: "Missing stripe-signature header" },
-        { status: 400 }
-      );
-    }
+    if (!sig) return NextResponse.json({ error: "No signature" }, { status: 400 });
 
     const body = await request.text();
-
     const event = stripe.webhooks.constructEvent(
       body,
       sig,
@@ -90,26 +72,48 @@ export async function POST(request) {
       if (appId !== "dreamsaver") return NextResponse.json({ received: true });
 
       const goalIdsArray = goalIds.split(",");
+      const amountPerGoal = Number(amountPaid) / goalIdsArray.length; // Split if multiple goals
 
       await Promise.all(
         goalIdsArray.map(async (goalId) => {
+          
+          // 1. FIX: Create the Deposit Record FIRST
+          await prisma.deposit.create({
+            data: {
+              goalId,
+              userId,
+              amount: amountPerGoal,
+              paymentMethod: "STRIPE_CHECKOUT",
+              status: "COMPLETED",
+              receiptNumber: session.id, 
+            },
+          });
+
+          // 2. Fetch fresh goal data
           const goal = await prisma.goal.findUnique({ where: { id: goalId } });
           if (!goal) return;
 
-          const newSaved = Number(goal.saved) + Number(amountPaid);
-          const status =
-            newSaved >= Number(goal.targetAmount)
-              ? "COMPLETED"
-              : "ACTIVE";
+          // 3. Recalculate total directly from Deposit table (safest way)
+          const totalSavedAgg = await prisma.deposit.aggregate({
+             _sum: { amount: true },
+             where: { goalId },
+          });
+          const newSavedTotal = totalSavedAgg._sum.amount || 0;
 
+          // 4. Update Goal
+          const status = newSavedTotal >= Number(goal.targetAmount) ? "COMPLETED" : "ACTIVE";
+          
           await prisma.goal.update({
             where: { id: goalId },
-            data: { saved: newSaved, status },
+            data: { 
+              saved: newSavedTotal, 
+              status 
+            },
           });
         })
       );
 
-      // Clear cart after payment success
+      // Clear cart
       await prisma.user.update({
         where: { id: userId },
         data: { cart: {} },
