@@ -5,7 +5,6 @@ import { useSelector, useDispatch } from "react-redux";
 import { useRouter } from "next/navigation";
 import Image from "next/image";
 import Counter from "@/components/Counter";
-// REMOVED: import OrderSummary from "@/components/OrderSummary";
 import { deleteItemFromCart } from "@/lib/features/cart/cartSlice";
 import { Trash2Icon, CheckCircleIcon } from "lucide-react"; 
 
@@ -19,7 +18,6 @@ export default function CartPage() {
   const [cartArray, setCartArray] = useState([]);
   const [goals, setGoals] = useState([]);
   const [loadingGoals, setLoadingGoals] = useState(true);
-  const [processingGoalId, setProcessingGoalId] = useState(null);
 
   // ================= CART LOGIC =================
   const createCartArray = () => {
@@ -46,7 +44,6 @@ export default function CartPage() {
       const res = await fetch("/api/set-goal");
       const data = await res.json();
       
-      // Manually calculate 'saved' from deposits list
       const calculatedGoals = (data.goals || []).map(goal => {
          const totalSaved = (goal.deposits || []).reduce((sum, dep) => sum + Number(dep.amount), 0);
          return {
@@ -84,28 +81,7 @@ export default function CartPage() {
     }
   };
 
-  // 3. Deposit (Stripe)
-  const handleDeposit = async (goal) => {
-    if (goal.status === "COMPLETED") return;
-
-    try {
-      setProcessingGoalId(goal.id);
-      const res = await fetch("/api/stripe-deposit", {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ goalId: goal.id, amount: 100 }) 
-      });
-      const data = await res.json();
-      if (!res.ok) throw new Error(data.error || "Stripe checkout failed");
-      window.location.href = data.checkoutUrl; 
-    } catch (err) {
-      alert(err.message);
-    } finally {
-      setProcessingGoalId(null);
-    }
-  };
-
-  // 4. Navigate
+  // 3. Navigate
   const handleGoalClick = (goal) => {
     router.push(`/goals/${goal.id}`);
   };
@@ -197,7 +173,7 @@ export default function CartPage() {
                   return (
                     <div
                       key={goal.id}
-                      onClick={() => !isCompleted && handleGoalClick(goal)}
+                      onClick={() => handleGoalClick(goal)}
                       className={`group relative p-4 border rounded-xl transition-all duration-300 ${
                         isCompleted
                           ? "bg-green-50/50 border-green-200"
@@ -271,7 +247,7 @@ export default function CartPage() {
                                </div>
                             ) : (
                                <>
-                                  {/* Delete Button */}
+                                  {/* Delete Button (Only action remaining) */}
                                   <button
                                     onClick={(e) => {
                                       e.stopPropagation();
@@ -281,25 +257,6 @@ export default function CartPage() {
                                     title="Delete Goal"
                                   >
                                     <Trash2Icon size={18} />
-                                  </button>
-
-                                  {/* Deposit Button */}
-                                  <button
-                                    onClick={(e) => {
-                                      e.stopPropagation();
-                                      handleDeposit(goal);
-                                    }}
-                                    disabled={processingGoalId === goal.id}
-                                    className="flex items-center gap-2 px-4 py-1.5 bg-slate-900 text-white text-sm font-medium rounded-lg hover:bg-emerald-600 transition-all shadow-sm active:scale-95 disabled:bg-slate-300 disabled:scale-100"
-                                  >
-                                    {processingGoalId === goal.id ? (
-                                      <span className="flex items-center gap-2">
-                                        <span className="w-3 h-3 border-2 border-white/30 border-t-white rounded-full animate-spin"/>
-                                        Processing
-                                      </span>
-                                    ) : (
-                                      "Add Deposit"
-                                    )}
                                   </button>
                                 </>
                             )}

@@ -4,7 +4,9 @@ import { NextResponse } from "next/server";
 import crypto from "crypto";
 
 export async function POST(req, { params }) {
-  const { goalId } = params;
+  // FIX: Await the params object before destructuring
+  const { goalId } = await params;
+  
   const { userId } = getAuth(req);
 
   if (!userId)
