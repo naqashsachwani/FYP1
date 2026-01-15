@@ -1,5 +1,3 @@
-// app/api/stripe/route.js
-
 import prisma from "@/lib/prisma";
 import { NextResponse } from "next/server";
 import Stripe from "stripe";
@@ -12,12 +10,13 @@ export async function POST(request) {
 
   /* =====================================================
      1️⃣ CHECKOUT SESSION CREATION
-     (Updated to use Dynamic Origin)
   ===================================================== */
   if (mode === "checkout") {
     try {
-      // ✅ FIX: Get the dynamic origin (e.g., https://your-app.vercel.app)
-      const origin = request.headers.get("origin");
+      // ✅ FIX: ROBUST URL DETECTION
+      const protocol = request.headers.get("x-forwarded-proto") || "https";
+      const host = request.headers.get("host");
+      const baseUrl = request.headers.get("origin") || `${protocol}://${host}`;
 
       const { goalIds, userId, amount } = await request.json();
 
@@ -31,7 +30,7 @@ export async function POST(request) {
         line_items: [
           {
             price_data: {
-              currency: "pkr", // Ensure this is PKR
+              currency: "pkr", 
               unit_amount: Math.round(Number(amount) * 100),
               product_data: { name: "Goal Deposit" },
             },
@@ -44,9 +43,9 @@ export async function POST(request) {
           userId,
           amountPaid: amount,
         },
-        // ✅ FIX: Use dynamic 'origin' instead of env variable
-        success_url: `${origin}/cart`,
-        cancel_url: `${origin}/goals?cancel=1`,
+        // ✅ USE 'baseUrl' HERE
+        success_url: `${baseUrl}/cart`,
+        cancel_url: `${baseUrl}/goals?cancel=1`,
       });
 
       return NextResponse.json({ checkoutUrl: session.url });
@@ -56,8 +55,7 @@ export async function POST(request) {
   }
 
   /* =====================================================
-     2️⃣ WEBHOOK HANDLING
-     (Keep existing logic)
+     2️⃣ WEBHOOK HANDLING (Unchanged)
   ===================================================== */
   try {
     const sig = request.headers.get("stripe-signature");
@@ -77,12 +75,10 @@ export async function POST(request) {
       if (appId !== "dreamsaver") return NextResponse.json({ received: true });
 
       const goalIdsArray = goalIds.split(",");
-      const amountPerGoal = Number(amountPaid) / goalIdsArray.length; // Split if multiple goals
+      const amountPerGoal = Number(amountPaid) / goalIdsArray.length; 
 
       await Promise.all(
         goalIdsArray.map(async (goalId) => {
-          
-          // 1. Create the Deposit Record FIRST
           await prisma.deposit.create({
             data: {
               goalId,
@@ -94,31 +90,24 @@ export async function POST(request) {
             },
           });
 
-          // 2. Fetch fresh goal data
           const goal = await prisma.goal.findUnique({ where: { id: goalId } });
           if (!goal) return;
 
-          // 3. Recalculate total directly from Deposit table (safest way)
           const totalSavedAgg = await prisma.deposit.aggregate({
              _sum: { amount: true },
              where: { goalId },
           });
           const newSavedTotal = totalSavedAgg._sum.amount || 0;
 
-          // 4. Update Goal
           const status = newSavedTotal >= Number(goal.targetAmount) ? "COMPLETED" : "ACTIVE";
           
           await prisma.goal.update({
             where: { id: goalId },
-            data: { 
-              saved: newSavedTotal, 
-              status 
-            },
+            data: { saved: newSavedTotal, status },
           });
         })
       );
 
-      // Clear cart
       await prisma.user.update({
         where: { id: userId },
         data: { cart: {} },

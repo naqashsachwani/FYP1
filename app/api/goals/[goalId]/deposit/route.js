@@ -6,10 +6,15 @@ import Stripe from "stripe";
 const stripe = new Stripe(process.env.STRIPE_SECRET_KEY);
 
 export async function POST(req, context) {
-  // ✅ FIX 1: Get dynamic origin (Works for Localhost & Vercel)
-  const origin = req.headers.get("origin");
+  // ✅ FIX: ROBUST URL DETECTION
+  // 1. Try 'origin' first.
+  // 2. Fallback to 'host' header (Vercel always provides this).
+  // 3. Default to HTTPS.
+  const protocol = req.headers.get("x-forwarded-proto") || "https";
+  const host = req.headers.get("host");
+  const baseUrl = req.headers.get("origin") || `${protocol}://${host}`;
 
-  // ✅ FIX 2: Await params for Next.js 15
+  // ✅ Next.js 15: Await params
   const { goalId } = await context.params;
   
   const { userId } = getAuth(req);
@@ -50,9 +55,9 @@ export async function POST(req, context) {
           quantity: 1,
         },
       ],
-      // ✅ FIX 3: Use 'origin' variable instead of process.env.NEXT_PUBLIC_URL
-      success_url: `${origin}/goals/${goalId}?payment=success&amount=${numericAmount}`,
-      cancel_url: `${origin}/goals/${goalId}?payment=cancel`,
+      // ✅ USE THE ROBUST 'baseUrl' VARIABLE
+      success_url: `${baseUrl}/goals/${goalId}?payment=success&amount=${numericAmount}`,
+      cancel_url: `${baseUrl}/goals/${goalId}?payment=cancel`,
     });
 
     return NextResponse.json({ checkoutUrl: session.url });
