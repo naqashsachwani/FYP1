@@ -6,7 +6,10 @@ import Stripe from "stripe";
 const stripe = new Stripe(process.env.STRIPE_SECRET_KEY);
 
 export async function POST(req, context) {
-  // ✅ FIX 1: Await params for Next.js 15
+  // ✅ FIX 1: Get dynamic origin (Works for Localhost & Vercel)
+  const origin = req.headers.get("origin");
+
+  // ✅ FIX 2: Await params for Next.js 15
   const { goalId } = await context.params;
   
   const { userId } = getAuth(req);
@@ -38,7 +41,7 @@ export async function POST(req, context) {
       line_items: [
         {
           price_data: {
-            currency: "pkr", // Changed to PKR (assuming Pakistan based on context), or keep 'usd' if intended
+            currency: "pkr", 
             product_data: {
               name: goal.product?.name || "Savings Goal Deposit",
             },
@@ -47,9 +50,9 @@ export async function POST(req, context) {
           quantity: 1,
         },
       ],
-      // ✅ FIX 2: Added '&amount=${numericAmount}' so frontend can read it
-      success_url: `${process.env.NEXT_PUBLIC_URL}/goals/${goalId}?payment=success&amount=${numericAmount}`,
-      cancel_url: `${process.env.NEXT_PUBLIC_URL}/goals/${goalId}?payment=cancel`,
+      // ✅ FIX 3: Use 'origin' variable instead of process.env.NEXT_PUBLIC_URL
+      success_url: `${origin}/goals/${goalId}?payment=success&amount=${numericAmount}`,
+      cancel_url: `${origin}/goals/${goalId}?payment=cancel`,
     });
 
     return NextResponse.json({ checkoutUrl: session.url });
