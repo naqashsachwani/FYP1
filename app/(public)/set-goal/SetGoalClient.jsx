@@ -31,7 +31,7 @@ function TermsModal({ open, onClose }) {
 /* ================= MAIN PAGE ================= */
 export default function SetGoalClient() {
   const { user } = useUser();
-  const userId = user?.id;
+  // const userId = user?.id; // Not used directly in rendering, relying on backend auth
 
   const searchParams = useSearchParams();
   const router = useRouter();
@@ -62,7 +62,7 @@ export default function SetGoalClient() {
       .then(r => r.json())
       .then(d => setProduct(d.product));
 
-    fetch("/api/set-goal")
+    fetch("/api/set-goal", { cache: "no-store" })
       .then(r => r.json())
       .then(d => setGoals(d.goals || []));
   }, [productId]);
@@ -92,10 +92,11 @@ export default function SetGoalClient() {
 
     setSuccess("Goal saved successfully!");
 
-    // refresh goals
-    const refreshed = await fetch("/api/set-goal").then(r => r.json());
+    // refresh goals list locally
+    const refreshed = await fetch("/api/set-goal", { cache: "no-store" }).then(r => r.json());
     setGoals(refreshed.goals || []);
 
+    router.refresh(); // Refresh Next.js cache
     setTimeout(() => router.push("/cart"), 1200);
   };
 
@@ -114,11 +115,12 @@ export default function SetGoalClient() {
       const res = await fetch("/api/set-goal", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
+        cache: "no-store", // Ensure we don't hit browser cache
         body: JSON.stringify({
           productId,
           targetAmount: product.price,
           targetDate,
-          status: "ACTIVE", // ✅ Set directly to ACTIVE (No deposit needed)
+          status: "ACTIVE", // ✅ ACTIVE = FORCE NEW CREATION
         }),
       });
 
@@ -130,6 +132,8 @@ export default function SetGoalClient() {
 
       // 2. Redirect directly to the Goal Details Page
       setSuccess("Goal started! Redirecting...");
+      
+      router.refresh(); // Crucial: clear client cache before navigating
       router.push(`/goals/${data.goal.id}`); 
 
     } catch (err) {
@@ -142,6 +146,7 @@ export default function SetGoalClient() {
   const deleteGoal = async (goalId) => {
     await fetch(`/api/goals/${goalId}`, { method: "DELETE" });
     setGoals(goals.filter(g => g.id !== goalId));
+    router.refresh();
   };
 
   return (
