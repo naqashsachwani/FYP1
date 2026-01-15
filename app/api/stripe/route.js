@@ -12,10 +12,13 @@ export async function POST(request) {
 
   /* =====================================================
      1️⃣ CHECKOUT SESSION CREATION
-     (This part was fine, just keeping the currency fix)
+     (Updated to use Dynamic Origin)
   ===================================================== */
   if (mode === "checkout") {
     try {
+      // ✅ FIX: Get the dynamic origin (e.g., https://your-app.vercel.app)
+      const origin = request.headers.get("origin");
+
       const { goalIds, userId, amount } = await request.json();
 
       if (!goalIds?.length || !userId || !amount) {
@@ -41,8 +44,9 @@ export async function POST(request) {
           userId,
           amountPaid: amount,
         },
-        success_url: `${process.env.NEXT_PUBLIC_URL}/cart`,
-        cancel_url: `${process.env.NEXT_PUBLIC_URL}/goals?cancel=1`,
+        // ✅ FIX: Use dynamic 'origin' instead of env variable
+        success_url: `${origin}/cart`,
+        cancel_url: `${origin}/goals?cancel=1`,
       });
 
       return NextResponse.json({ checkoutUrl: session.url });
@@ -52,7 +56,8 @@ export async function POST(request) {
   }
 
   /* =====================================================
-     2️⃣ WEBHOOK HANDLING (CRITICAL FIXES HERE)
+     2️⃣ WEBHOOK HANDLING
+     (Keep existing logic)
   ===================================================== */
   try {
     const sig = request.headers.get("stripe-signature");
@@ -77,7 +82,7 @@ export async function POST(request) {
       await Promise.all(
         goalIdsArray.map(async (goalId) => {
           
-          // 1. FIX: Create the Deposit Record FIRST
+          // 1. Create the Deposit Record FIRST
           await prisma.deposit.create({
             data: {
               goalId,
