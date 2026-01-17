@@ -1,12 +1,22 @@
 'use client'
-import { storesDummyData } from "@/assets/assets"
 import StoreInfo from "@/components/admin/StoreInfo"
 import Loading from "@/components/Loading"
 import { useEffect, useState } from "react"
 import toast from "react-hot-toast"
 import { useUser, useAuth } from "@clerk/nextjs"
 import axios from "axios"
-import { Store, Activity, Search, Filter, Users, TrendingUp, ToggleLeft, ToggleRight, Eye, Edit } from "lucide-react"
+import { 
+  Store, 
+  Activity, 
+  Search, 
+  Users, 
+  Eye, 
+  Edit, 
+  X, 
+  Save, 
+  CheckCircle2, 
+  AlertCircle 
+} from "lucide-react"
 
 export default function AdminStores() {
     
@@ -17,6 +27,13 @@ export default function AdminStores() {
     const [loading, setLoading] = useState(true)
     const [searchTerm, setSearchTerm] = useState("")
     const [statusFilter, setStatusFilter] = useState("all")
+
+    // Modal States
+    const [isEditModalOpen, setIsEditModalOpen] = useState(false)
+    const [isViewModalOpen, setIsViewModalOpen] = useState(false)
+    const [selectedStore, setSelectedStore] = useState(null)
+    const [editFormData, setEditFormData] = useState({ name: "", isActive: false })
+    // Removed 'updating' state because we are closing the modal instantly (Optimistic UI)
 
     const fetchStores = async () => {
         try{
@@ -31,15 +48,45 @@ export default function AdminStores() {
         setLoading(false)
     }
 
-    const toggleIsActive = async (storeId) => {
+    const handleEditClick = (store) => {
+        setSelectedStore(store)
+        setEditFormData({ name: store.name, isActive: store.isActive })
+        setIsEditModalOpen(true)
+    }
+
+    const handleViewClick = (store) => {
+        setSelectedStore(store)
+        setIsViewModalOpen(true)
+    }
+
+    const handleUpdateStore = async (e) => {
+        e.preventDefault()
+        
+        // 1. Snapshot previous state for rollback on error
+        const previousStores = [...stores]
+        
+        // 2. Optimistic Update: Update UI & Close Modal Immediately
+        const updatedStore = { ...selectedStore, ...editFormData }
+        setStores(prev => prev.map(s => s.id === selectedStore.id ? updatedStore : s))
+        setIsEditModalOpen(false)
+        toast.success("Store details updated successfully")
+
         try {
             const token = await getToken()
-            const { data } = await axios.post('/api/admin/toggle-store', {storeId},
-                {headers: { Authorization: `Bearer ${token}` }})
-            await fetchStores()
-            toast.success(data.message)
+            
+            // 3. Perform API Call in Background
+            if (editFormData.isActive !== selectedStore.isActive) {
+                 await axios.post('/api/admin/toggle-store', { storeId: selectedStore.id }, 
+                    { headers: { Authorization: `Bearer ${token}` } })
+            }
+            
+            // Note: Add name update API call here if available
+            // await axios.put(...)
+
         } catch (error) {
-            toast.error(error?.response?.data?.error || error.message)
+            // 4. Revert UI if API fails
+            setStores(previousStores)
+            toast.error("Failed to update store on server")
         }
     }
 
@@ -49,224 +96,271 @@ export default function AdminStores() {
         }
     }, [user])
 
-    // Filter stores based on search and status
     const filteredStores = stores.filter(store => {
         const matchesSearch = store.name.toLowerCase().includes(searchTerm.toLowerCase()) ||
-                            store.username.toLowerCase().includes(searchTerm.toLowerCase())
+                              store.username.toLowerCase().includes(searchTerm.toLowerCase())
         const matchesStatus = statusFilter === "all" || 
-                            (statusFilter === "active" && store.isActive) ||
-                            (statusFilter === "inactive" && !store.isActive)
+                              (statusFilter === "active" && store.isActive) ||
+                              (statusFilter === "inactive" && !store.isActive)
         return matchesSearch && matchesStatus
     })
 
-    // Calculate stats
     const totalStores = stores.length
     const activeStores = stores.filter(store => store.isActive).length
     const inactiveStores = stores.filter(store => !store.isActive).length
 
-    return !loading ? (
-        <div className="space-y-6 mb-28">
+    if (loading) return (
+        <div className="flex items-center justify-center min-h-[60vh]">
+            <Loading />
+        </div>
+    )
+
+    return (
+        <div className="space-y-8 mb-28 relative">
+            
             {/* Header Section */}
-            <div className="flex flex-col lg:flex-row lg:items-center justify-between gap-4">
+            <div className="flex flex-col lg:flex-row lg:items-center justify-between gap-6">
                 <div>
-                    <h1 className="text-3xl font-bold text-slate-800">Store Management</h1>
-                    <p className="text-slate-600 mt-2">Manage all DreamSaver stores and their activity status</p>
+                    <h1 className="text-3xl lg:text-4xl font-extrabold text-slate-800 tracking-tight">
+                        Store Management
+                    </h1>
+                    <p className="text-slate-500 mt-2 text-lg">
+                        Monitor and manage your platform's store ecosystem.
+                    </p>
                 </div>
-                <div className="flex items-center gap-3 bg-gradient-to-r from-blue-50 to-purple-50 px-4 py-3 rounded-2xl border border-blue-100">
-                    <Store size={18} className="text-blue-600" />
-                    <span className="text-sm text-blue-700 font-medium">Live Store Management</span>
+                <div className="flex items-center gap-3 bg-white px-5 py-3 rounded-full shadow-sm border border-slate-200">
+                    <span className="relative flex h-3 w-3">
+                      <span className="animate-ping absolute inline-flex h-full w-full rounded-full bg-green-400 opacity-75"></span>
+                      <span className="relative inline-flex rounded-full h-3 w-3 bg-green-500"></span>
+                    </span>
+                    <span className="text-sm text-slate-700 font-semibold">Live System</span>
                 </div>
             </div>
 
             {/* Stats Cards */}
-            <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
-                <div className="bg-white rounded-2xl p-6 border border-slate-200 shadow-sm">
-                    <div className="flex items-center justify-between">
-                        <div>
-                            <p className="text-slate-600 text-sm">Total Stores</p>
-                            <p className="text-3xl font-bold text-slate-800 mt-2">{totalStores}</p>
-                        </div>
-                        <div className="w-12 h-12 bg-blue-100 rounded-xl flex items-center justify-center">
-                            <Store className="w-6 h-6 text-blue-600" />
-                        </div>
-                    </div>
-                </div>
-
-                <div className="bg-white rounded-2xl p-6 border border-slate-200 shadow-sm">
-                    <div className="flex items-center justify-between">
-                        <div>
-                            <p className="text-slate-600 text-sm">Active Stores</p>
-                            <p className="text-3xl font-bold text-green-600 mt-2">{activeStores}</p>
-                        </div>
-                        <div className="w-12 h-12 bg-green-100 rounded-xl flex items-center justify-center">
-                            <Activity className="w-6 h-6 text-green-600" />
-                        </div>
-                    </div>
-                </div>
-
-                <div className="bg-white rounded-2xl p-6 border border-slate-200 shadow-sm">
-                    <div className="flex items-center justify-between">
-                        <div>
-                            <p className="text-slate-600 text-sm">Inactive Stores</p>
-                            <p className="text-3xl font-bold text-orange-600 mt-2">{inactiveStores}</p>
-                        </div>
-                        <div className="w-12 h-12 bg-orange-100 rounded-xl flex items-center justify-center">
-                            <Users className="w-6 h-6 text-orange-600" />
-                        </div>
-                    </div>
-                </div>
+            <div className="grid grid-cols-1 md:grid-cols-3 gap-6">
+                <StatCard label="Total Stores" value={totalStores} icon={Store} color="blue" bg="bg-blue-50" text="text-blue-600" />
+                <StatCard label="Active Stores" value={activeStores} icon={Activity} color="green" bg="bg-green-50" text="text-green-600" />
+                <StatCard label="Inactive Stores" value={inactiveStores} icon={Users} color="orange" bg="bg-orange-50" text="text-orange-600" />
             </div>
 
-            {/* Filters and Search */}
-            <div className="bg-white rounded-2xl p-6 border border-slate-200 shadow-sm">
-                <div className="flex flex-col sm:flex-row gap-4 items-start sm:items-center justify-between">
-                    <div className="flex flex-col sm:flex-row gap-4 flex-1 w-full">
-                        {/* Search */}
-                        <div className="relative flex-1 max-w-md">
-                            <Search className="absolute left-3 top-1/2 transform -translate-y-1/2 text-slate-400 w-4 h-4" />
-                            <input
-                                type="text"
-                                placeholder="Search stores by name or username..."
-                                value={searchTerm}
-                                onChange={(e) => setSearchTerm(e.target.value)}
-                                className="w-full pl-10 pr-4 py-3 border border-slate-300 rounded-xl focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-transparent bg-slate-50"
-                            />
-                        </div>
-
-                        {/* Status Filter */}
-                        <div className="flex items-center gap-3">
-                            <span className="text-slate-700 text-sm font-medium">Filter by:</span>
-                            <select
-                                value={statusFilter}
-                                onChange={(e) => setStatusFilter(e.target.value)}
-                                className="px-4 py-3 border border-slate-300 rounded-xl focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-transparent bg-slate-50"
-                            >
-                                <option value="all">All Stores</option>
-                                <option value="active">Active Only</option>
-                                <option value="inactive">Inactive Only</option>
-                            </select>
-                        </div>
+            {/* Filters */}
+            <div className="bg-white rounded-3xl p-6 border border-slate-200 shadow-sm">
+                <div className="flex flex-col md:flex-row gap-4 items-center justify-between">
+                    <div className="relative w-full md:max-w-md">
+                        <Search className="absolute left-4 top-1/2 transform -translate-y-1/2 text-slate-400 w-5 h-5" />
+                        <input
+                            type="text"
+                            placeholder="Search stores..."
+                            value={searchTerm}
+                            onChange={(e) => setSearchTerm(e.target.value)}
+                            className="w-full pl-12 pr-4 py-3 border border-slate-200 rounded-xl focus:outline-none focus:ring-2 focus:ring-blue-500/20 focus:border-blue-500 transition-all bg-slate-50/50 focus:bg-white"
+                        />
                     </div>
-
-                    <div className="text-sm text-slate-500 bg-slate-100 px-3 py-2 rounded-lg">
-                        Showing {filteredStores.length} of {totalStores} stores
+                    <div className="flex items-center gap-4 w-full md:w-auto">
+                        <select
+                            value={statusFilter}
+                            onChange={(e) => setStatusFilter(e.target.value)}
+                            className="w-full md:w-auto px-4 py-3 border border-slate-200 rounded-xl focus:outline-none focus:ring-2 focus:ring-blue-500/20 bg-slate-50/50 focus:bg-white cursor-pointer"
+                        >
+                            <option value="all">All Status</option>
+                            <option value="active">Active</option>
+                            <option value="inactive">Inactive</option>
+                        </select>
+                        <span className="hidden md:block text-sm font-medium text-slate-500 whitespace-nowrap">
+                            {filteredStores.length} Result{filteredStores.length !== 1 && 's'}
+                        </span>
                     </div>
                 </div>
             </div>
 
             {/* Stores List */}
-            {filteredStores.length ? (
-                <div className="space-y-4">
-                    {filteredStores.map((store) => (
-                        <div key={store.id} className="bg-white border border-slate-200 rounded-2xl shadow-sm overflow-hidden hover:shadow-md transition-all duration-200">
-                            <div className="p-6 flex flex-col lg:flex-row lg:items-start gap-6">
+            <div className="space-y-4">
+                {filteredStores.length > 0 ? (
+                    filteredStores.map((store) => (
+                        <div key={store.id} className="group bg-white border border-slate-200 rounded-2xl p-5 hover:shadow-lg hover:border-blue-200 transition-all duration-300">
+                            <div className="flex flex-col lg:flex-row lg:items-start gap-6">
+                                
                                 {/* Store Info */}
-                                <div className="flex-1">
+                                <div className="flex-1 min-w-0">
                                     <StoreInfo store={store} />
                                 </div>
 
-                                {/* Actions */}
-                                <div className="flex flex-col sm:flex-row lg:flex-col items-start sm:items-center lg:items-end gap-4 pt-4 lg:pt-0 lg:border-l lg:border-slate-200 lg:pl-6">
-                                    <div className="flex flex-col gap-4">
-                                        {/* Status Toggle */}
-                                        <div className="flex items-center gap-3">
-                                            <span className="text-sm font-medium text-slate-700">Store Status</span>
-                                            <div className="flex items-center gap-3">
-                                                <label className="relative inline-flex items-center cursor-pointer">
-                                                    <input 
-                                                        type="checkbox" 
-                                                        className="sr-only peer" 
-                                                        onChange={() => toast.promise(
-                                                            toggleIsActive(store.id), 
-                                                            { 
-                                                                loading: "Updating store status...", 
-                                                                success: "Store status updated!",
-                                                                error: "Failed to update status"
-                                                            }
-                                                        )} 
-                                                        checked={store.isActive} 
-                                                    />
-                                                    <div className="w-14 h-7 bg-slate-300 peer-focus:outline-none rounded-full peer peer-checked:after:translate-x-full peer-checked:after:border-white after:content-[''] after:absolute after:top-0.5 after:left-[4px] after:bg-white after:border-gray-300 after:border after:rounded-full after:h-6 after:w-6 after:transition-all peer-checked:bg-green-600"></div>
-                                                </label>
-                                                <span className={`text-sm font-medium ${store.isActive ? 'text-green-600' : 'text-slate-500'}`}>
-                                                    {store.isActive ? (
-                                                        <span className="flex items-center gap-1">
-                                                            <Activity size={14} />
-                                                            Active
-                                                        </span>
-                                                    ) : (
-                                                        <span className="flex items-center gap-1">
-                                                            <ToggleLeft size={14} />
-                                                            Inactive
-                                                        </span>
-                                                    )}
-                                                </span>
-                                            </div>
-                                        </div>
+                                {/* Controls (Vertical) */}
+                                <div className="flex flex-col items-stretch sm:items-end gap-3 lg:border-l lg:border-slate-100 lg:pl-6 min-w-[140px] pt-4 lg:pt-0">
+                                    
+                                    {/* Status Badge - Now Centered */}
+                                    <div className={`self-center px-3 py-1 rounded-full text-xs font-semibold uppercase tracking-wider ${store.isActive ? 'bg-green-100 text-green-700' : 'bg-red-100 text-red-700'}`}>
+                                        {store.isActive ? 'Active' : 'Inactive'}
+                                    </div>
 
-                                        {/* Additional Actions */}
-                                        <div className="flex gap-2">
-                                            <button className="flex items-center gap-2 px-3 py-2 text-sm bg-blue-50 text-blue-600 rounded-lg hover:bg-blue-100 transition-colors border border-blue-200">
-                                                <Eye size={14} />
-                                                View
-                                            </button>
-                                            <button className="flex items-center gap-2 px-3 py-2 text-sm bg-slate-50 text-slate-600 rounded-lg hover:bg-slate-100 transition-colors border border-slate-200">
-                                                <Edit size={14} />
-                                                Edit
-                                            </button>
-                                        </div>
-                                    </div>
-                                </div>
-                            </div>
-
-                            {/* Store Footer */}
-                            <div className="bg-slate-50 px-6 py-3 border-t border-slate-200">
-                                <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-2 text-sm text-slate-600">
-                                    <div className="flex items-center gap-4">
-                                        <span>Store ID: <strong>{store.id}</strong></span>
-                                        <span>•</span>
-                                        <span>Last Updated: {new Date(store.updatedAt || store.createdAt).toLocaleDateString()}</span>
-                                    </div>
-                                    <div className={`flex items-center gap-2 ${store.isActive ? 'text-green-600' : 'text-orange-600'}`}>
-                                        <div className={`w-2 h-2 rounded-full ${store.isActive ? 'bg-green-500' : 'bg-orange-500'}`}></div>
-                                        <span>{store.isActive ? 'Currently Active' : 'Currently Inactive'}</span>
-                                    </div>
+                                    {/* Action Buttons */}
+                                    <button 
+                                        onClick={() => handleViewClick(store)}
+                                        className="w-full flex items-center justify-center gap-2 px-4 py-2 text-sm font-medium text-slate-600 bg-slate-50 hover:bg-slate-100 rounded-xl transition-colors border border-slate-100"
+                                    >
+                                        <Eye size={16} />
+                                        View
+                                    </button>
+                                    <button 
+                                        onClick={() => handleEditClick(store)}
+                                        className="w-full flex items-center justify-center gap-2 px-4 py-2 text-sm font-medium text-blue-600 bg-blue-50 hover:bg-blue-100 rounded-xl transition-colors border border-blue-100"
+                                    >
+                                        <Edit size={16} />
+                                        Edit
+                                    </button>
                                 </div>
                             </div>
                         </div>
-                    ))}
-                </div>
-            ) : (
-                <div className="bg-white rounded-2xl border border-slate-200 p-12 text-center shadow-sm">
-                    <div className="w-20 h-20 mx-auto mb-4 rounded-full bg-slate-100 flex items-center justify-center">
-                        <Store className="w-10 h-10 text-slate-400" />
+                    ))
+                ) : (
+                    <EmptyState searchTerm={searchTerm} />
+                )}
+            </div>
+
+            {/* --- Modals --- */}
+            
+            {/* Edit Modal */}
+            {isEditModalOpen && selectedStore && (
+                <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-slate-900/40 backdrop-blur-sm">
+                    <div className="bg-white rounded-3xl w-full max-w-md shadow-2xl p-6 animate-in fade-in zoom-in duration-200">
+                        <div className="flex justify-between items-center mb-6">
+                            <h2 className="text-xl font-bold text-slate-800">Edit Store</h2>
+                            <button 
+                                onClick={() => setIsEditModalOpen(false)} 
+                                className="p-2 hover:bg-slate-100 rounded-full transition-colors"
+                            >
+                                <X size={20} className="text-slate-500" />
+                            </button>
+                        </div>
+
+                        <form onSubmit={handleUpdateStore} className="space-y-4">
+                            <div>
+                                <label className="block text-sm font-medium text-slate-700 mb-1">Store Name</label>
+                                <input 
+                                    type="text" 
+                                    value={editFormData.name}
+                                    onChange={(e) => setEditFormData({...editFormData, name: e.target.value})}
+                                    className="w-full px-4 py-2.5 rounded-xl border border-slate-300 focus:ring-2 focus:ring-blue-500/20 focus:border-blue-500 outline-none transition-all"
+                                />
+                            </div>
+
+                            <div>
+                                <label className="block text-sm font-medium text-slate-700 mb-1">Status</label>
+                                <div className="relative">
+                                    <select 
+                                        value={editFormData.isActive ? "active" : "inactive"}
+                                        onChange={(e) => setEditFormData({...editFormData, isActive: e.target.value === "active"})}
+                                        className="w-full px-4 py-2.5 rounded-xl border border-slate-300 focus:ring-2 focus:ring-blue-500/20 outline-none bg-white appearance-none cursor-pointer"
+                                    >
+                                        <option value="active">Active</option>
+                                        <option value="inactive">Inactive</option>
+                                    </select>
+                                    <div className="absolute right-4 top-1/2 -translate-y-1/2 pointer-events-none text-slate-500">
+                                        <svg width="12" height="12" viewBox="0 0 12 12" fill="none" xmlns="http://www.w3.org/2000/svg">
+                                            <path d="M2.5 4.5L6 8L9.5 4.5" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round"/>
+                                        </svg>
+                                    </div>
+                                </div>
+                            </div>
+
+                            <div className="pt-4 flex gap-3">
+                                <button 
+                                    type="button" 
+                                    onClick={() => setIsEditModalOpen(false)} 
+                                    className="flex-1 py-2.5 rounded-xl border border-slate-200 text-slate-600 font-medium hover:bg-slate-50 transition-colors"
+                                >
+                                    Cancel
+                                </button>
+                                <button 
+                                    type="submit" 
+                                    className="flex-1 py-2.5 rounded-xl bg-blue-600 text-white font-medium hover:bg-blue-700 transition-all shadow-lg shadow-blue-500/30 flex justify-center items-center gap-2"
+                                >
+                                    <Save size={18} /> 
+                                    Save Changes
+                                </button>
+                            </div>
+                        </form>
                     </div>
-                    <h3 className="text-xl font-semibold text-slate-700 mb-2">
-                        {searchTerm || statusFilter !== "all" ? "No stores found" : "No stores available"}
-                    </h3>
-                    <p className="text-slate-500 max-w-md mx-auto">
-                        {searchTerm || statusFilter !== "all" 
-                            ? "Try adjusting your search or filter to find what you're looking for."
-                            : "There are no stores registered on DreamSaver yet. Stores will appear here once they register and get approved."
-                        }
-                    </p>
-                    {(searchTerm || statusFilter !== "all") && (
-                        <button 
-                            onClick={() => {
-                                setSearchTerm("")
-                                setStatusFilter("all")
-                            }}
-                            className="mt-4 px-6 py-2.5 bg-blue-600 text-white rounded-xl hover:bg-blue-700 transition-colors font-medium"
-                        >
-                            Clear filters
-                        </button>
-                    )}
+                </div>
+            )}
+
+            {/* View Modal */}
+            {isViewModalOpen && selectedStore && (
+                <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-slate-900/40 backdrop-blur-sm">
+                    <div className="bg-white rounded-3xl w-full max-w-lg shadow-2xl p-0 overflow-hidden animate-in fade-in zoom-in duration-200">
+                        <div className="bg-slate-50 p-6 border-b border-slate-100 flex justify-between items-center">
+                            <h2 className="text-xl font-bold text-slate-800">Store Details</h2>
+                            <button onClick={() => setIsViewModalOpen(false)} className="p-2 hover:bg-white rounded-full transition-colors">
+                                <X size={20} className="text-slate-500" />
+                            </button>
+                        </div>
+                        <div className="p-6 space-y-6">
+                            <div className="flex items-center gap-4">
+                                <div className="w-16 h-16 bg-blue-50 rounded-2xl flex items-center justify-center text-blue-600 font-bold text-2xl uppercase">
+                                    {selectedStore.name.charAt(0)}
+                                </div>
+                                <div>
+                                    <h3 className="text-xl font-bold text-slate-800">{selectedStore.name}</h3>
+                                    <p className="text-slate-500">@{selectedStore.username}</p>
+                                </div>
+                            </div>
+                            <div className="grid grid-cols-2 gap-4">
+                                <DetailItem label="Store ID" value={selectedStore.id} />
+                                <DetailItem label="Created At" value={new Date(selectedStore.createdAt).toLocaleDateString()} />
+                                <DetailItem label="Status" value={
+                                    <span className={`inline-flex items-center gap-1.5 px-2.5 py-0.5 rounded-full text-xs font-medium ${selectedStore.isActive ? 'bg-green-100 text-green-700' : 'bg-red-100 text-red-700'}`}>
+                                        {selectedStore.isActive ? <CheckCircle2 size={12}/> : <AlertCircle size={12}/>}
+                                        {selectedStore.isActive ? "Active" : "Inactive"}
+                                    </span>
+                                } />
+                                <DetailItem label="Owner" value="N/A" />
+                            </div>
+                        </div>
+                        <div className="p-6 bg-slate-50 border-t border-slate-100 text-right">
+                             <button onClick={() => setIsViewModalOpen(false)} className="px-6 py-2 bg-white border border-slate-200 rounded-xl font-medium text-slate-600 hover:bg-slate-100 transition-colors">Close</button>
+                        </div>
+                    </div>
                 </div>
             )}
         </div>
-    ) : (
-        <div className="flex items-center justify-center min-h-96">
-            <Loading />
-        </div>
     )
 }
+
+const StatCard = ({ label, value, icon: Icon, color, bg, text }) => (
+    <div className="bg-white rounded-3xl p-6 border border-slate-100 shadow-sm hover:shadow-md transition-shadow">
+        <div className="flex items-center justify-between">
+            <div>
+                <p className="text-slate-500 text-sm font-medium">{label}</p>
+                <p className={`text-3xl font-extrabold mt-2 text-slate-800`}>{value}</p>
+            </div>
+            <div className={`w-14 h-14 ${bg} rounded-2xl flex items-center justify-center transform rotate-3 group-hover:rotate-6 transition-transform`}>
+                <Icon className={`w-7 h-7 ${text}`} />
+            </div>
+        </div>
+    </div>
+)
+
+const DetailItem = ({ label, value }) => (
+    <div className="bg-slate-50 p-3 rounded-xl">
+        <p className="text-xs text-slate-400 font-medium uppercase tracking-wider mb-1">{label}</p>
+        <div className="text-sm font-semibold text-slate-700 break-words">{value}</div>
+    </div>
+)
+
+const EmptyState = ({ searchTerm }) => (
+    <div className="bg-white rounded-3xl border border-slate-200 p-12 text-center shadow-sm">
+        <div className="w-24 h-24 mx-auto mb-6 rounded-full bg-slate-50 flex items-center justify-center">
+            <Search className="w-10 h-10 text-slate-300" />
+        </div>
+        <h3 className="text-xl font-bold text-slate-800 mb-2">
+            {searchTerm ? "No matches found" : "No stores yet"}
+        </h3>
+        <p className="text-slate-500 max-w-sm mx-auto">
+            {searchTerm 
+                ? "We couldn't find any store matching your search. Try checking for typos."
+                : "Stores will appear here once they register on the DreamSaver platform."
+            }
+        </p>
+    </div>
+)

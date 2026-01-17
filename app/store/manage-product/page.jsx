@@ -127,7 +127,7 @@ export default function StoreManageProducts() {
                     {editingProduct === product.id ? (
                       <input
                         type="text"
-                        className="border border-gray-300 p-1.5 rounded-lg text-sm w-36"
+                        className="border border-gray-300 p-1.5 rounded-lg text-sm w-36 focus:ring-2 focus:ring-blue-400 outline-none"
                         value={formData.name}
                         onChange={(e) => setFormData({ ...formData, name: e.target.value })}
                       />
@@ -141,23 +141,43 @@ export default function StoreManageProducts() {
                     {editingProduct === product.id ? (
                       <input
                         type="text"
-                        className="border border-gray-300 p-1.5 rounded-lg text-sm w-full"
+                        className="border border-gray-300 p-1.5 rounded-lg text-sm w-full focus:ring-2 focus:ring-blue-400 outline-none"
                         value={formData.description}
                         onChange={(e) => setFormData({ ...formData, description: e.target.value })}
                       />
                     ) : (
-                      <span className="text-gray-500">{product.description}</span>
+                      <span className="text-gray-500 truncate block max-w-xs">{product.description}</span>
                     )}
                   </td>
 
-                  {/* MRP */}
-                  <td className="px-6 py-4 hidden md:table-cell text-gray-500 line-through">
-                    {currency}{product.mrp.toLocaleString()}
+                  {/* MRP (Editable) */}
+                  <td className="px-6 py-4 hidden md:table-cell text-gray-500">
+                    {editingProduct === product.id ? (
+                      <input
+                        type="number"
+                        className="border border-gray-300 p-1.5 rounded-lg text-sm w-20 focus:ring-2 focus:ring-blue-400 outline-none"
+                        value={formData.mrp}
+                        onChange={(e) => setFormData({ ...formData, mrp: e.target.value })}
+                        placeholder="MRP"
+                      />
+                    ) : (
+                      <span className="line-through">{currency}{product.mrp.toLocaleString()}</span>
+                    )}
                   </td>
 
-                  {/* Price */}
+                  {/* Price (Editable) */}
                   <td className="px-6 py-4 font-semibold text-green-600">
-                    {currency}{product.price.toLocaleString()}
+                    {editingProduct === product.id ? (
+                      <input
+                        type="number"
+                        className="border border-gray-300 p-1.5 rounded-lg text-sm w-20 focus:ring-2 focus:ring-green-400 outline-none"
+                        value={formData.price}
+                        onChange={(e) => setFormData({ ...formData, price: e.target.value })}
+                        placeholder="Price"
+                      />
+                    ) : (
+                      <span>{currency}{product.price.toLocaleString()}</span>
+                    )}
                   </td>
 
                   {/* Status */}
