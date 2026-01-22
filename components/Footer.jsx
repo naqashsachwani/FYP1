@@ -32,8 +32,6 @@ const Footer = () => {
       title: "WEBSITE",
       links: [
         { text: "Home", path: "/" },
-        { text: "Privacy Policy", path: "/" },
-        { text: "Become Plus Member", path: "/pricing" },
         { text: "Create Your Store", path: "/create-store" },
       ],
     },

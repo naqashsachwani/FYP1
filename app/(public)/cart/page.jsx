@@ -152,9 +152,9 @@ export default function CartPage() {
                                 src={goal.product.images[0]} alt={goal.product.name} 
                                 width={56} height={56} className="object-cover w-full h-full"
                               />
-                           ) : (
+                            ) : (
                               <div className="w-full h-full flex items-center justify-center text-slate-400 text-[10px]">No Img</div>
-                           )}
+                            )}
                         </div>
                         <div className="flex-1 min-w-0">
                             <h3 className="font-semibold text-slate-800 truncate">{goal.product?.name}</h3>
@@ -178,11 +178,9 @@ export default function CartPage() {
 
           {/* ================= SECTION 2: ACTIVE GOALS ================= */}
           <div className="bg-white/80 backdrop-blur-md shadow-lg border border-slate-200 rounded-2xl p-6">
-            <div className="flex items-center justify-between mb-6">
+            <div className="mb-6">
               <h2 className="text-xl font-bold text-slate-800">Active Goals</h2>
-              <span className="bg-emerald-100 text-emerald-700 text-xs font-bold px-3 py-1 rounded-full">
-                {activeGoals.length} Active
-              </span>
+              {/* Badge is completely removed from here */}
             </div>
 
             {loadingGoals ? (
@@ -213,9 +211,9 @@ export default function CartPage() {
                                 src={goal.product.images[0]} alt={goal.product.name} 
                                 width={64} height={64} className="object-cover w-full h-full"
                               />
-                           ) : (
+                            ) : (
                               <div className="w-full h-full flex items-center justify-center text-slate-400"><span className="text-xs">No Img</span></div>
-                           )}
+                            )}
                         </div>
 
                         <div className="flex-1 min-w-0">
