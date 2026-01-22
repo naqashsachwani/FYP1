@@ -42,7 +42,7 @@ export default function GoalDetails() {
       createdAt: new Date(d.createdAt),
     }));
 
-    // 2. MANUALLY CALCULATE TOTAL SAVED
+    // 2. CALCULATE TOTAL SAVED
     const calculatedSaved = deposits.reduce((sum, dep) => sum + dep.amount, 0);
 
     const normalizedGoal = {
@@ -176,7 +176,6 @@ export default function GoalDetails() {
             // 1. Cap width at 100%
             style={{ width: `${Math.min(goal.progressPercent, 100)}%` }}
           >
-            {/* 2. ✅ FIX: Cap text at 100% so it doesn't show 1333% */}
             {goal.progressPercent > 10 &&
               `${Math.min(Math.round(goal.progressPercent), 100)}%`}
           </div>

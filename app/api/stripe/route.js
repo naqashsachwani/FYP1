@@ -9,7 +9,7 @@ export async function POST(request) {
   const mode = url.searchParams.get("mode");
 
   /* =====================================================
-     1️⃣ CHECKOUT SESSION CREATION
+     CHECKOUT SESSION CREATION
   ===================================================== */
   if (mode === "checkout") {
     try {
@@ -43,7 +43,7 @@ export async function POST(request) {
           userId,
           amountPaid: amount,
         },
-        // ✅ USE 'baseUrl' HERE
+        // USE 'baseUrl' HERE
         success_url: `${baseUrl}/cart`,
         cancel_url: `${baseUrl}/goals?cancel=1`,
       });
@@ -55,7 +55,7 @@ export async function POST(request) {
   }
 
   /* =====================================================
-     2️⃣ WEBHOOK HANDLING (Unchanged)
+      WEBHOOK HANDLING 
   ===================================================== */
   try {
     const sig = request.headers.get("stripe-signature");

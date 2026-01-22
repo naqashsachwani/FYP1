@@ -40,7 +40,7 @@ export async function GET(req, { params }) {
   }
 }
 
-/* ===================== ADD DEPOSIT (Manual) ===================== */
+/* ===================== ADD DEPOSIT ===================== */
 export async function POST(req, { params }) {
   const { goalId } = await params; 
   const { userId } = getAuth(req);
@@ -133,7 +133,6 @@ export async function DELETE(req, { params }) {
 
     if (!goal) return NextResponse.json({ error: "Goal not found" }, { status: 404 });
 
-    // ✅ LOGIC 1: HARD DELETE (No Money)
     // If goal is a Draft (SAVED) OR an Active Goal with 0 saved, completely remove it.
     if (goal.status === "SAVED" || Number(goal.saved) === 0) {
        await prisma.$transaction([
@@ -144,7 +143,7 @@ export async function DELETE(req, { params }) {
       return NextResponse.json({ message: "Goal deleted successfully" });
     }
 
-    // ✅ LOGIC 2: SOFT DELETE (Has Money)
+
     // If the goal has actual funds, we keep the record but mark it REFUNDED.
     else {
       await prisma.goal.update({

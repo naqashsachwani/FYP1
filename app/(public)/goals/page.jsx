@@ -14,7 +14,7 @@ export default function GoalsPage() {
       .then((data) => {
         const rawGoals = data.goals || [];
 
-        // ✅ FIX: Manually calculate progress for each goal in the list
+        // calculate progress for each goal in the list
         const calculatedGoals = rawGoals.map((goal) => {
           // 1. Sum up all deposits for this goal
           const totalSaved = (goal.deposits || []).reduce(
