@@ -16,7 +16,11 @@ export async function GET(request) {
 
     const stores = await prisma.store.findMany({
       where: { status: "approved" },
-      include: { user: true },
+      include: { 
+        user: true,
+        // ✅ ADDED: This fetches the legal/financial data needed for the UI
+        storeApplication: true 
+      },
       orderBy: { createdAt: "desc" },
     });
 
