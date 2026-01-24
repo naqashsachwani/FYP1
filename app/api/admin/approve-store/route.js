@@ -3,7 +3,7 @@ import authAdmin from "@/middlewares/authAdmin";
 import { getAuth } from "@clerk/nextjs/server";
 import { NextResponse } from "next/server";
 
-// ✅ Approve / Reject Seller
+// ✅ Approve / Reject Seller (Transactional Update)
 export async function POST(request) {
   try {
     const { userId } = getAuth(request);
@@ -13,21 +13,35 @@ export async function POST(request) {
       return NextResponse.json({ error: "not-authorized" }, { status: 401 });
     }
 
-    const { storeId, status } = await request.json();
+    const { storeId, status } = await request.json(); // status = 'approved' or 'rejected'
 
-    if (status === "approved") {
-      await prisma.store.update({
-        where: { id: storeId },
-        data: { status: "approved", isActive: true },
-      });
-    } else if (status === "rejected") {
-      await prisma.store.update({
-        where: { id: storeId },
-        data: { status: "rejected" },
-      });
-    }
+    await prisma.$transaction(async (tx) => {
+        // 1. Update Store Status
+        const storeUpdateData = {
+            status: status,
+            isActive: status === "approved" // Only active if approved
+        };
+        await tx.store.update({
+            where: { id: storeId },
+            data: storeUpdateData
+        });
 
-    return NextResponse.json({ message: `${status} successfully` });
+        // 2. Update Application Status
+        // We look for the application associated with this storeId
+        const appStatus = status === "approved" ? "APPROVED" : "REJECTED";
+        
+        // Note: Prisma updateMany is used here in case of edge cases, but logic dictates one app per store
+        await tx.storeApplication.updateMany({
+            where: { storeId: storeId },
+            data: { 
+                status: appStatus,
+                reviewedBy: userId,
+                reviewedAt: new Date()
+            }
+        });
+    });
+
+    return NextResponse.json({ message: `Store ${status} successfully` });
   } catch (error) {
     console.error(error);
     return NextResponse.json(
@@ -43,14 +57,17 @@ export async function GET(request) {
     const { userId } = getAuth(request);
     const isAdmin = await authAdmin(userId);
 
-    // 🔥 Fix: Inverted logic
     if (!isAdmin) {
       return NextResponse.json({ error: "not authorized" }, { status: 401 });
     }
 
+    // Include StoreApplication data if you want to show CNIC/Bank info in the admin panel
     const stores = await prisma.store.findMany({
       where: { status: { in: ["pending", "rejected"] } },
-      include: { user: true },
+      include: { 
+          user: true,
+          storeApplication: true // Fetch application details to show Admin
+      },
     });
 
     return NextResponse.json({ stores });

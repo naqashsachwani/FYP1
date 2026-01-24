@@ -25,7 +25,12 @@ export default function CreateStore() {
     email: "",
     contact: "",
     address: "",
-    image: ""
+    image: "",
+    // New Fields for Application
+    taxId: "",
+    cnic: "",
+    bankName: "",
+    accountNumber: ""
   })
 
   const onChangeHandler = (e) => {
@@ -35,31 +40,30 @@ export default function CreateStore() {
   const fetchSellerStatus = async () => {
     const token = await getToken()
     try {
-      const { data } = await axios.get("/api/store/create", {
+      // Check specific status endpoint
+      const { data } = await axios.get("/api/store/check-status", {
         headers: { Authorization: `Bearer ${token}` },
       })
-      if (["approved", "rejected", "pending"].includes(data.status)) {
-        setStatus(data.status)
+      
+      if (data.exists) {
+        setStatus(data.store.status)
         setAlreadySubmitted(true)
-        switch (data.status) {
+        
+        switch (data.store.status) {
           case "approved":
-            setMessage("Your store has been approved, you can now add products to your store from dashboard")
-            setTimeout(() => router.push("/store"), 5000)
+            setMessage("Your store has been approved! Redirecting...")
+            setTimeout(() => router.push("/store"), 2000)
             break
           case "rejected":
-            setMessage("Your store request has been rejected, contact the admin for more details")
+            setMessage("Your application was rejected. Please contact support.")
             break
-          case "pending":
-            setMessage("Your store request is pending, please wait for admin to approve your store")
-            break
-          default:
+          default: // pending
+            setMessage("Your application is under review. Please wait for admin approval.")
             break
         }
-      } else {
-        setAlreadySubmitted(false)
       }
     } catch (error) {
-      toast.error(error?.response?.data?.error || error.message)
+      console.error(error)
     }
     setLoading(false)
   }
@@ -71,39 +75,45 @@ export default function CreateStore() {
     try {
       const token = await getToken()
       const formData = new FormData()
+      
+      // Basic Store Info
       formData.append("name", storeInfo.name)
-      formData.append("description", storeInfo.description)
       formData.append("username", storeInfo.username)
+      formData.append("description", storeInfo.description)
       formData.append("email", storeInfo.email)
       formData.append("contact", storeInfo.contact)
       formData.append("address", storeInfo.address)
       formData.append("image", storeInfo.image)
+
+      // Banking & Legal Info
+      formData.append("taxId", storeInfo.taxId)
+      formData.append("cnic", storeInfo.cnic)
+      formData.append("bankName", storeInfo.bankName)
+      formData.append("accountNumber", storeInfo.accountNumber)
 
       const { data } = await axios.post("/api/store/create", formData, {
         headers: { Authorization: `Bearer ${token}` },
       })
 
       toast.success(data.message)
-      await fetchSellerStatus()
+      setAlreadySubmitted(true)
+      setStatus("pending")
+      setMessage("Your application is under review.")
     } catch (error) {
       toast.error(error?.response?.data?.error || error.message)
     }
   }
 
-  // ✅ Wait for Clerk user to load properly
   useEffect(() => {
-    if (!isLoaded) return // wait until Clerk is ready
-    if (user) {
+    if (isLoaded && user) {
       fetchSellerStatus()
-    } else {
-      setLoading(false) // user not logged in, stop loading
+    } else if (isLoaded && !user) {
+      setLoading(false)
     }
   }, [isLoaded, user])
 
-  // ✅ Show loading while Clerk or fetch is in progress
   if (!isLoaded || loading) return <Loading />
 
-  // ✅ If user is not logged in
   if (!user) {
     return (
       <div className="min-h-[80vh] flex items-center justify-center text-slate-600 bg-gradient-to-br from-indigo-50 to-purple-100 text-center px-6">
@@ -114,155 +124,102 @@ export default function CreateStore() {
     )
   }
 
-  // ✅ Main Page Rendering
   return (
     <>
       {!alreadySubmitted ? (
         <div className="relative min-h-screen bg-gradient-to-br from-indigo-50 via-white to-purple-50 py-16 px-4 sm:px-6 lg:px-8">
-          {/* Floating Card */}
-          <div className="max-w-4xl mx-auto bg-white/80 backdrop-blur-xl shadow-2xl rounded-3xl p-8 sm:p-12 border border-slate-200 transition-transform hover:scale-[1.01] duration-300">
-
-            {/* Header */}
+          <div className="max-w-4xl mx-auto bg-white/80 backdrop-blur-xl shadow-2xl rounded-3xl p-8 sm:p-12 border border-slate-200">
+            
             <div className="text-center mb-10">
-              <h1 className="text-4xl sm:text-5xl font-extrabold text-slate-800 tracking-tight">
-                Create Your{" "}
-                <span className="bg-gradient-to-r from-indigo-500 to-purple-600 bg-clip-text text-transparent font-bold">
-                  DreamSaver
-                </span>{" "}
-                Store
+              <h1 className="text-4xl font-extrabold text-slate-800 tracking-tight">
+                Create Your <span className="text-indigo-600">DreamSaver</span> Store
               </h1>
-              <p className="text-slate-500 mt-3 text-base sm:text-lg max-w-2xl mx-auto">
-                Showcase your brand to millions! Submit your store details for DreamSaver’s verification. You’ll go live once approved.
-              </p>
+              <p className="text-slate-500 mt-3">Submit your business details for verification.</p>
             </div>
 
-            {/* Upload Section */}
-            <div className="flex flex-col items-center gap-3">
+            {/* Logo Upload */}
+            <div className="flex flex-col items-center gap-3 mb-8">
               <label className="cursor-pointer flex flex-col items-center">
-                <div className="border-2 border-dashed border-slate-300 hover:border-indigo-400 rounded-2xl p-6 transition-all bg-white w-60 flex flex-col items-center justify-center">
+                <div className="border-2 border-dashed border-slate-300 hover:border-indigo-400 rounded-2xl p-4 bg-white w-40 h-40 flex flex-col items-center justify-center overflow-hidden">
                   <Image
-                    src={
-                      storeInfo.image
-                        ? URL.createObjectURL(storeInfo.image)
-                        : assets.upload_area
-                    }
-                    className="rounded-xl object-contain h-20 w-auto"
+                    src={storeInfo.image ? URL.createObjectURL(storeInfo.image) : assets.upload_area}
+                    className="object-contain w-full h-full"
                     alt="Store logo"
                     width={150}
-                    height={100}
+                    height={150}
                   />
-                  <p className="mt-2 text-sm text-slate-500 font-medium">
-                    Click to upload store logo
-                  </p>
                 </div>
-                <input
-                  type="file"
-                  accept="image/*"
-                  onChange={(e) =>
-                    setStoreInfo({ ...storeInfo, image: e.target.files[0] })
-                  }
-                  hidden
-                />
+                <p className="mt-2 text-sm text-slate-500">Upload Logo</p>
+                <input type="file" accept="image/*" onChange={(e) => setStoreInfo({ ...storeInfo, image: e.target.files[0] })} hidden />
               </label>
             </div>
 
-            {/* Form Fields */}
-            <form
-              onSubmit={(e) =>
-                toast.promise(onSubmitHandler(e), { loading: "Submitting..." })
-              }
-              className="mt-10 space-y-6"
-            >
-              <div className="grid grid-cols-1 sm:grid-cols-2 gap-6">
-                <div>
-                  <label className="block text-slate-700 font-semibold mb-1">
-                    Username
-                  </label>
-                  <input
-                    name="username"
-                    onChange={onChangeHandler}
-                    value={storeInfo.username}
-                    type="text"
-                    placeholder="Enter your store username"
-                    className="w-full border border-slate-300 rounded-xl p-3 focus:ring-2 focus:ring-indigo-500 focus:outline-none transition-all"
-                  />
-                </div>
-
-                <div>
-                  <label className="block text-slate-700 font-semibold mb-1">
-                    Store Name
-                  </label>
-                  <input
-                    name="name"
-                    onChange={onChangeHandler}
-                    value={storeInfo.name}
-                    type="text"
-                    placeholder="Enter your store name"
-                    className="w-full border border-slate-300 rounded-xl p-3 focus:ring-2 focus:ring-indigo-500 focus:outline-none transition-all"
-                  />
-                </div>
-
-                <div className="sm:col-span-2">
-                  <label className="block text-slate-700 font-semibold mb-1">
-                    Description
-                  </label>
-                  <textarea
-                    name="description"
-                    onChange={onChangeHandler}
-                    value={storeInfo.description}
-                    rows={4}
-                    placeholder="Describe your store..."
-                    className="w-full border border-slate-300 rounded-xl p-3 focus:ring-2 focus:ring-indigo-500 focus:outline-none resize-none transition-all"
-                  />
-                </div>
-
-                <div>
-                  <label className="block text-slate-700 font-semibold mb-1">
-                    Email
-                  </label>
-                  <input
-                    name="email"
-                    onChange={onChangeHandler}
-                    value={storeInfo.email}
-                    type="email"
-                    placeholder="Enter your store email"
-                    className="w-full border border-slate-300 rounded-xl p-3 focus:ring-2 focus:ring-indigo-500 focus:outline-none transition-all"
-                  />
-                </div>
-
-                <div>
-                  <label className="block text-slate-700 font-semibold mb-1">
-                    Contact Number
-                  </label>
-                  <input
-                    name="contact"
-                    onChange={onChangeHandler}
-                    value={storeInfo.contact}
-                    type="text"
-                    placeholder="Enter your contact number"
-                    className="w-full border border-slate-300 rounded-xl p-3 focus:ring-2 focus:ring-indigo-500 focus:outline-none transition-all"
-                  />
-                </div>
-
-                <div className="sm:col-span-2">
-                  <label className="block text-slate-700 font-semibold mb-1">
-                    Address
-                  </label>
-                  <textarea
-                    name="address"
-                    onChange={onChangeHandler}
-                    value={storeInfo.address}
-                    rows={3}
-                    placeholder="Enter your store address"
-                    className="w-full border border-slate-300 rounded-xl p-3 focus:ring-2 focus:ring-indigo-500 focus:outline-none resize-none transition-all"
-                  />
+            <form onSubmit={(e) => toast.promise(onSubmitHandler(e), { loading: "Submitting..." })} className="space-y-6">
+              
+              {/* Section 1: Basic Details */}
+              <div className="bg-slate-50 p-6 rounded-2xl border border-slate-100">
+                <h3 className="text-lg font-bold text-slate-700 mb-4">Store Details</h3>
+                <div className="grid grid-cols-1 sm:grid-cols-2 gap-6">
+                  <div>
+                    <label className="block text-slate-700 font-semibold mb-1">Store Name</label>
+                    <input name="name" onChange={onChangeHandler} value={storeInfo.name} type="text" placeholder="e.g. Tech World" className="w-full border border-slate-300 rounded-xl p-3 focus:ring-2 focus:ring-indigo-500 outline-none" required />
+                  </div>
+                  <div>
+                    <label className="block text-slate-700 font-semibold mb-1">Username</label>
+                    <input name="username" onChange={onChangeHandler} value={storeInfo.username} type="text" placeholder="e.g. tech_world" className="w-full border border-slate-300 rounded-xl p-3 focus:ring-2 focus:ring-indigo-500 outline-none" required />
+                  </div>
+                  <div className="sm:col-span-2">
+                    <label className="block text-slate-700 font-semibold mb-1">Description</label>
+                    <textarea name="description" onChange={onChangeHandler} value={storeInfo.description} rows={3} placeholder="Tell us about your business..." className="w-full border border-slate-300 rounded-xl p-3 focus:ring-2 focus:ring-indigo-500 outline-none resize-none" required />
+                  </div>
                 </div>
               </div>
 
-              {/* Submit Button */}
-              <div className="flex justify-center mt-10">
-                <button className="relative bg-gradient-to-r from-indigo-200 via-purple-200 to-indigo-100 text-slate-800 px-12 py-3 rounded-full text-lg font-semibold shadow-md hover:shadow-indigo-300/50 hover:scale-105 transition-all duration-300 border border-indigo-300">
-                  Submit
+              {/* Section 2: Contact Info */}
+              <div className="bg-slate-50 p-6 rounded-2xl border border-slate-100">
+                <h3 className="text-lg font-bold text-slate-700 mb-4">Contact Information</h3>
+                <div className="grid grid-cols-1 sm:grid-cols-2 gap-6">
+                  <div>
+                    <label className="block text-slate-700 font-semibold mb-1">Email</label>
+                    <input name="email" onChange={onChangeHandler} value={storeInfo.email} type="email" className="w-full border border-slate-300 rounded-xl p-3 focus:ring-2 focus:ring-indigo-500 outline-none" required />
+                  </div>
+                  <div>
+                    <label className="block text-slate-700 font-semibold mb-1">Phone</label>
+                    <input name="contact" onChange={onChangeHandler} value={storeInfo.contact} type="text" className="w-full border border-slate-300 rounded-xl p-3 focus:ring-2 focus:ring-indigo-500 outline-none" required />
+                  </div>
+                  <div className="sm:col-span-2">
+                    <label className="block text-slate-700 font-semibold mb-1">Address</label>
+                    <input name="address" onChange={onChangeHandler} value={storeInfo.address} type="text" className="w-full border border-slate-300 rounded-xl p-3 focus:ring-2 focus:ring-indigo-500 outline-none" required />
+                  </div>
+                </div>
+              </div>
+
+              {/* Section 3: Legal & Banking */}
+              <div className="bg-slate-50 p-6 rounded-2xl border border-slate-100">
+                <h3 className="text-lg font-bold text-slate-700 mb-4">Legal & Banking</h3>
+                <div className="grid grid-cols-1 sm:grid-cols-2 gap-6">
+                  <div>
+                    <label className="block text-slate-700 font-semibold mb-1">CNIC / Gov ID</label>
+                    <input name="cnic" onChange={onChangeHandler} value={storeInfo.cnic} type="text" placeholder="XXXXX-XXXXXXX-X" className="w-full border border-slate-300 rounded-xl p-3 focus:ring-2 focus:ring-indigo-500 outline-none" required />
+                  </div>
+                  <div>
+                    <label className="block text-slate-700 font-semibold mb-1">Tax ID (NTN) <span className="text-xs text-slate-400 font-normal">(Optional)</span></label>
+                    <input name="taxId" onChange={onChangeHandler} value={storeInfo.taxId} type="text" className="w-full border border-slate-300 rounded-xl p-3 focus:ring-2 focus:ring-indigo-500 outline-none" />
+                  </div>
+                  <div>
+                    <label className="block text-slate-700 font-semibold mb-1">Bank Name</label>
+                    <input name="bankName" onChange={onChangeHandler} value={storeInfo.bankName} type="text" className="w-full border border-slate-300 rounded-xl p-3 focus:ring-2 focus:ring-indigo-500 outline-none" required />
+                  </div>
+                  <div>
+                    <label className="block text-slate-700 font-semibold mb-1">Account Number (IBAN)</label>
+                    <input name="accountNumber" onChange={onChangeHandler} value={storeInfo.accountNumber} type="text" className="w-full border border-slate-300 rounded-xl p-3 focus:ring-2 focus:ring-indigo-500 outline-none" required />
+                  </div>
+                </div>
+              </div>
+
+              <div className="flex justify-center mt-8">
+                <button className="bg-indigo-600 text-white px-12 py-3 rounded-full text-lg font-semibold shadow-lg hover:bg-indigo-700 transition-all w-full sm:w-auto">
+                  Submit Application
                 </button>
               </div>
             </form>
@@ -270,15 +227,11 @@ export default function CreateStore() {
         </div>
       ) : (
         <div className="min-h-[80vh] flex flex-col items-center justify-center text-center px-6 bg-gradient-to-br from-indigo-50 to-purple-100">
-          <p className="sm:text-2xl lg:text-3xl font-semibold text-slate-700 max-w-2xl">
-            {message}
-          </p>
-          {status === "approved" && (
-            <p className="mt-5 text-slate-500">
-              Redirecting to dashboard in{" "}
-              <span className="font-semibold text-indigo-600">5 seconds</span>
-            </p>
-          )}
+          <div className="bg-white p-8 rounded-3xl shadow-xl max-w-lg">
+            <h2 className="text-2xl font-bold text-slate-800 mb-4">Application Status</h2>
+            <p className="text-lg font-medium text-indigo-600 uppercase tracking-wider mb-2">{status}</p>
+            <p className="text-slate-500">{message}</p>
+          </div>
         </div>
       )}
     </>

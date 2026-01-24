@@ -1,94 +1,91 @@
-import prisma from "@/lib/prisma";
-import { getAuth } from "@clerk/nextjs/server";
-import { NextResponse } from "next/server";
-import { randomUUID } from "crypto";
+import prisma from "@/lib/prisma"
+import { getAuth } from "@clerk/nextjs/server"
+import { NextResponse } from "next/server"
+import imagekit from "@/configs/imageKit"
 
-export async function POST(req, { params }) {
-  const { userId } = getAuth(req);
-  const goalId = params.goalId;
+export async function POST(request) {
+  try {
+    const { userId } = getAuth(request)
+    if (!userId) return NextResponse.json({ error: "Unauthorized" }, { status: 401 })
 
-  if (!userId)
-    return NextResponse.json({ error: "Unauthenticated" }, { status: 401 });
+    // Check if store already exists
+    const existingStore = await prisma.store.findUnique({ where: { userId } })
+    if (existingStore) return NextResponse.json({ error: "Store already exists" }, { status: 400 })
 
-  const { amount, stripePaymentId } = await req.json();
-  const depositAmount = Number(amount);
+    const formData = await request.formData()
+    
+    // Core Store Info
+    const name = formData.get("name")
+    const username = formData.get("username")
+    const description = formData.get("description")
+    const email = formData.get("email")
+    const contact = formData.get("contact")
+    const address = formData.get("address")
+    const imageFile = formData.get("image")
 
-  if (!depositAmount || depositAmount <= 0)
-    return NextResponse.json({ error: "Invalid amount" }, { status: 400 });
+    // Application Info
+    const cnic = formData.get("cnic")
+    const taxId = formData.get("taxId")
+    const bankName = formData.get("bankName")
+    const accountNumber = formData.get("accountNumber")
 
-  const goal = await prisma.goal.findUnique({
-    where: { id: goalId },
-    include: { product: true },
-  });
+    if (!name || !username || !email || !contact || !address || !cnic || !bankName || !accountNumber) {
+      return NextResponse.json({ error: "Missing required fields" }, { status: 400 })
+    }
 
-  if (!goal)
-    return NextResponse.json({ error: "Goal not found" }, { status: 404 });
+    // Upload Logo
+    let logoUrl = ""
+    if (imageFile && typeof imageFile !== "string") {
+      const buffer = Buffer.from(await imageFile.arrayBuffer())
+      const uploadRes = await imagekit.upload({
+        file: buffer,
+        fileName: `store_logo_${username}`,
+        folder: "stores"
+      })
+      logoUrl = uploadRes.url
+    }
 
-  if (goal.status !== "ACTIVE")
-    return NextResponse.json({ error: "Goal not active" }, { status: 400 });
+    // ✅ TRANSACTION: Create Store AND Application
+    await prisma.$transaction(async (tx) => {
+      // 1. Create Store (Inactive initially)
+      const newStore = await tx.store.create({
+        data: {
+          userId,
+          name,
+          username,
+          description,
+          email,
+          contact,
+          address,
+          logo: logoUrl,
+          status: "pending",
+          isActive: false 
+        }
+      })
 
-  /* ================= TRANSACTION ================= */
-  const transaction = await prisma.transaction.create({
-    data: {
-      userId,
-      goalId,
-      amount: depositAmount,
-      provider: "stripe",
-      providerPaymentId: stripePaymentId,
-      status: "COMPLETED",
-    },
-  });
+      // 2. Create Store Application
+      await tx.storeApplication.create({
+        data: {
+          userId,
+          storeId: newStore.id,
+          businessName: name,
+          contactEmail: email,
+          contactPhone: contact,
+          address: address,
+          cnic: cnic,
+          taxId: taxId || null,
+          bankName: bankName,
+          accountNumber: accountNumber,
+          documents: { logo: logoUrl }, // Storing logo ref in docs for now
+          status: "PENDING"
+        }
+      })
+    })
 
-  /* ================= DEPOSIT ================= */
-  await prisma.deposit.create({
-    data: {
-      goalId,
-      productId: goal.productId,
-      userId,
-      amount: depositAmount,
-      paymentMethod: "STRIPE",
-      status: "COMPLETED",
-      receiptNumber: randomUUID(),
-      stripePaymentId,
-    },
-  });
+    return NextResponse.json({ message: "Store application submitted successfully!" })
 
-  /* ================= UPDATE GOAL ================= */
-  const newSaved = Number(goal.saved) + depositAmount;
-
-  const updatedGoal = await prisma.goal.update({
-    where: { id: goalId },
-    data: {
-      saved: newSaved,
-      status:
-        newSaved >= Number(goal.targetAmount)
-          ? "COMPLETED"
-          : "ACTIVE",
-    },
-  });
-
-  /* ================= INVOICE ================= */
-  await prisma.invoice.create({
-    data: {
-      invoiceNumber: `INV-${Date.now()}`,
-      userId,
-      goalId,
-      amount: depositAmount,
-      status: "PAID",
-      paidAt: new Date(),
-    },
-  });
-
-  /* ================= NOTIFICATION ================= */
-  await prisma.notification.create({
-    data: {
-      userId,
-      goalId,
-      type: "PAYMENT_CONFIRMATION",
-      title: "Deposit Successful",
-      message: `Your deposit of ${depositAmount} has been added.`,
-    },
-  });
-
-  return NextResponse.json({ success: true });
+  } catch (error) {
+    console.error("Create Store Error:", error)
+    return NextResponse.json({ error: error.message }, { status: 500 })
+  }
 }
