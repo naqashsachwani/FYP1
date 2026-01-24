@@ -19,7 +19,9 @@ export async function GET(request) {
       where: { userId },
       include: { 
         product: true, 
-        deposits: { orderBy: { createdAt: "desc" } } 
+        deposits: { orderBy: { createdAt: "desc" } },
+        // ✅ FIX 1: Include PriceLock so you can see the linked data
+        priceLock: true 
       },
       orderBy: { createdAt: "desc" },
     });
@@ -55,9 +57,7 @@ export async function POST(request) {
     const amountNum = Number(targetAmount);
     if (!amountNum || amountNum <= 0) return NextResponse.json({ error: "targetAmount must be positive" }, { status: 400 });
 
-    // 1️⃣ CHECK FOR EXISTING *LIVE* GOAL ONLY
-    // We explicitly IGNORE "REFUNDED" or "CANCELLED" goals here.
-    // This allows the user to create a NEW goal for the same product if the old one was cancelled.
+    // 1️⃣ CHECK FOR EXISTING *LIVE* GOAL
     const existingGoal = await prisma.goal.findFirst({
       where: { 
         userId, 
@@ -68,15 +68,34 @@ export async function POST(request) {
 
     // 2️⃣ IF LIVE GOAL EXISTS -> UPDATE IT
     if (existingGoal) {
-      const updatedGoal = await prisma.goal.update({
-        where: { id: existingGoal.id },
-        data: { 
-          targetAmount: amountNum, 
-          endDate: targetDate ? new Date(targetDate) : existingGoal.endDate,
-          status: status 
-        },
+      // ✅ FIX 2: Use Transaction to update Goal AND PriceLock together
+      const updatedData = await prisma.$transaction(async (tx) => {
+        // A. Update Goal
+        const goalUpdate = await tx.goal.update({
+          where: { id: existingGoal.id },
+          data: { 
+            targetAmount: amountNum, 
+            endDate: targetDate ? new Date(targetDate) : existingGoal.endDate,
+            status: status 
+          },
+          include: { priceLock: true } // Return the price lock
+        });
+
+        // B. Update PriceLock Expiry to match Goal EndDate
+        // Only if a PriceLock exists for this goal
+        if (goalUpdate.priceLock) {
+           await tx.priceLock.update({
+             where: { id: goalUpdate.priceLock.id },
+             data: {
+               expiresAt: targetDate ? new Date(targetDate) : existingGoal.endDate
+             }
+           });
+        }
+
+        return goalUpdate;
       });
-      return NextResponse.json({ message: "Goal updated", goal: normalize(updatedGoal) });
+
+      return NextResponse.json({ message: "Goal updated", goal: normalize(updatedData) });
     }
 
     // 3️⃣ IF NO LIVE GOAL EXISTS -> CREATE NEW FRESH GOAL
@@ -98,11 +117,11 @@ export async function POST(request) {
         },
       });
 
-      // Create PriceLock
+      // Create PriceLock linked to Goal
       await tx.priceLock.create({
         data: {
           productId,
-          goalId: newGoal.id,
+          goalId: newGoal.id, // <--- This links the Goal data to PriceLock
           lockedPrice: product.price,
           originalPrice: product.price,
           lockedBy: userId,

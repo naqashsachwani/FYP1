@@ -69,18 +69,44 @@ export async function POST(request) {
   }
 }
 
-// 🟡 Edit product
+// 🟡 Edit product (Handles Image Upload)
 export async function PUT(request) {
   try {
     const { userId } = getAuth(request)
     const storeId = await authSeller(userId)
-    const { id, name, description, price, mrp } = await request.json()
 
     if (!storeId) return NextResponse.json({ error: "Not authorized" }, { status: 401 })
 
+    const formData = await request.formData()
+    const id = formData.get("id")
+    const name = formData.get("name")
+    const description = formData.get("description")
+    const price = Number(formData.get("price"))
+    const mrp = Number(formData.get("mrp"))
+    const imageFile = formData.get("image")
+
+    if (!id) return NextResponse.json({ error: "Product ID is required" }, { status: 400 })
+
+    let updateData = { name, description, price, mrp }
+
+    // If a new image is provided, upload it and update the images array
+    if (imageFile && typeof imageFile !== 'string') {
+      const buffer = Buffer.from(await imageFile.arrayBuffer())
+      const response = await imagekit.upload({
+        file: buffer,
+        fileName: imageFile.name,
+        folder: "products",
+      })
+      const imageUrl = imagekit.url({
+        path: response.filePath,
+        transformation: [{ quality: "auto" }, { format: "webp" }, { width: "1024" }],
+      })
+      updateData.images = [imageUrl]
+    }
+
     await prisma.product.update({
       where: { id },
-      data: { name, description, price: Number(price), mrp: Number(mrp) },
+      data: updateData,
     })
 
     return NextResponse.json({ message: "Product updated successfully" })

@@ -5,18 +5,27 @@ import Image from "next/image"
 import Loading from "@/components/Loading"
 import { useAuth, useUser } from "@clerk/nextjs"
 import axios from "axios"
-import { Pencil, Trash2 } from "lucide-react"
+import { Pencil, Trash2, Upload } from "lucide-react"
 
 export default function StoreManageProducts() {
 
   const { getToken } = useAuth()
   const { user } = useUser()
-  const currency = process.env.NEXT_PUBLIC_CURRENCY_SYMBOL || '$'
+  // ✅ UPDATED: Currency set to 'Rs '
+  const currency = process.env.NEXT_PUBLIC_CURRENCY_SYMBOL || 'Rs '
 
   const [loading, setLoading] = useState(true)
   const [products, setProducts] = useState([])
   const [editingProduct, setEditingProduct] = useState(null)
-  const [formData, setFormData] = useState({ name: "", price: "", mrp: "", description: "" })
+  
+  // ✅ UPDATED: Added imageFile to state
+  const [formData, setFormData] = useState({ 
+    name: "", 
+    price: "", 
+    mrp: "", 
+    description: "", 
+    imageFile: null 
+  })
 
   const fetchProducts = async () => {
     try {
@@ -53,21 +62,49 @@ export default function StoreManageProducts() {
       price: product.price,
       mrp: product.mrp,
       description: product.description,
+      imageFile: null, // Reset on edit
     })
   }
 
+  // ✅ UPDATED: Handle new image selection
+  const handleImageChange = (e) => {
+    const file = e.target.files[0]
+    if (file) {
+      setFormData({ ...formData, imageFile: file })
+    }
+  }
+
+  // ✅ UPDATED: Send FormData (Corrected Content-Type issue)
   const handleEditSubmit = async (id) => {
     try {
       const token = await getToken()
+      const submissionData = new FormData();
+      
+      submissionData.append('id', id);
+      submissionData.append('name', formData.name);
+      submissionData.append('description', formData.description);
+      submissionData.append('price', formData.price);
+      submissionData.append('mrp', formData.mrp);
+      
+      if (formData.imageFile) {
+        submissionData.append('image', formData.imageFile);
+      }
+
       const { data } = await axios.put(
         '/api/store/product',
-        { id, ...formData },
-        { headers: { Authorization: `Bearer ${token}` } }
+        submissionData,
+        { 
+          headers: { 
+            Authorization: `Bearer ${token}`,
+            // NOTE: Do NOT manually set Content-Type here. Axios handles it.
+          } 
+        }
       )
       toast.success(data.message)
-      setProducts(prev => prev.map(p => p.id === id ? { ...p, ...formData } : p))
+      fetchProducts(); // Refresh list to see new image
       setEditingProduct(null)
     } catch (error) {
+      console.error(error)
       toast.error(error?.response?.data?.error || error.message)
     }
   }
@@ -115,15 +152,42 @@ export default function StoreManageProducts() {
             <tbody className="text-gray-700">
               {products.map((product) => (
                 <tr key={product.id} className="border-t hover:bg-blue-50 transition-all">
-                  {/* Product Name */}
+                  {/* Product Name & Image */}
                   <td className="px-6 py-4 flex items-center gap-3">
-                    <Image
-                      width={50}
-                      height={50}
-                      className="p-1 rounded-xl shadow-md bg-white"
-                      src={product.images[0]}
-                      alt={product.name}
-                    />
+                    {editingProduct === product.id ? (
+                      // Edit Mode: Image Upload + Input
+                      <div className="flex flex-col gap-2">
+                        <label htmlFor={`image-upload-${product.id}`} className="cursor-pointer relative group">
+                          <Image
+                            width={50}
+                            height={50}
+                            className="p-1 rounded-xl shadow-md bg-white object-cover"
+                            src={formData.imageFile ? URL.createObjectURL(formData.imageFile) : product.images[0]}
+                            alt={product.name}
+                          />
+                          <div className="absolute inset-0 bg-black/40 rounded-xl flex items-center justify-center opacity-0 group-hover:opacity-100 transition-opacity">
+                            <Upload className="text-white w-4 h-4" />
+                          </div>
+                        </label>
+                        <input
+                          id={`image-upload-${product.id}`}
+                          type="file"
+                          accept="image/*"
+                          className="hidden"
+                          onChange={handleImageChange}
+                        />
+                      </div>
+                    ) : (
+                      // View Mode: Just Image
+                      <Image
+                        width={50}
+                        height={50}
+                        className="p-1 rounded-xl shadow-md bg-white object-cover"
+                        src={product.images[0]}
+                        alt={product.name}
+                      />
+                    )}
+                    
                     {editingProduct === product.id ? (
                       <input
                         type="text"
@@ -150,7 +214,7 @@ export default function StoreManageProducts() {
                     )}
                   </td>
 
-                  {/* MRP (Editable) */}
+                  {/* MRP */}
                   <td className="px-6 py-4 hidden md:table-cell text-gray-500">
                     {editingProduct === product.id ? (
                       <input
@@ -165,7 +229,7 @@ export default function StoreManageProducts() {
                     )}
                   </td>
 
-                  {/* Price (Editable) */}
+                  {/* Price */}
                   <td className="px-6 py-4 font-semibold text-green-600">
                     {editingProduct === product.id ? (
                       <input

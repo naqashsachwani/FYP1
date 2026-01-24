@@ -13,7 +13,6 @@ import {
   Download,
 } from "lucide-react"
 import { useEffect, useState } from "react"
-import toast from "react-hot-toast"
 import jsPDF from 'jspdf'
 import autoTable from 'jspdf-autotable'
 import {
@@ -28,7 +27,7 @@ import {
 
 export default function AdminDashboard() {
   const { getToken } = useAuth()
-  const currency = process.env.NEXT_PUBLIC_CURRENCY_SYMBOL || '$'
+  const currency = process.env.NEXT_PUBLIC_CURRENCY_SYMBOL || 'PKR'
 
   const [loading, setLoading] = useState(true)
   const [dashboardData, setDashboardData] = useState({
@@ -44,20 +43,23 @@ export default function AdminDashboard() {
   
   const [chartData, setChartData] = useState([])
 
+  // --- Helper: Format Currency nicely (e.g., "PKR 1,234") ---
+  const formatCurrency = (amount) => {
+    return `${currency} ${amount.toLocaleString()}`;
+  };
+
   // --- 1. Helper to Process Real Data for Chart ---
   const processChartData = (orders) => {
     const days = 7;
     const data = [];
     const today = new Date();
     
-    // Initialize last 7 days
     for (let i = 6; i >= 0; i--) {
         const d = new Date();
         d.setDate(today.getDate() - i);
-        const dateStr = d.toLocaleDateString('en-US', { weekday: 'short' });
+        const dateStr = d.toLocaleDateString('en-US', { weekday: 'short', month: 'short', day: 'numeric' });
         const dateKey = d.toISOString().split('T')[0];
         
-        // Filter orders for this specific date
         const daysOrders = orders.filter(o => {
             const orderDate = o.createdAt ? new Date(o.createdAt).toISOString().split('T')[0] : '';
             return orderDate === dateKey;
@@ -106,70 +108,152 @@ export default function AdminDashboard() {
     }
   }
 
-  // --- 3. Real Audit Report Logic ---
-  const handleGenerateAuditReport = () => {
-    const doc = new jsPDF()
-    const pageWidth = doc.internal.pageSize.getWidth()
-    const today = new Date()
-
-    // Header
-    doc.setFontSize(22)
-    doc.setTextColor(30, 41, 59)
-    doc.text("SYSTEM AUDIT REPORT", 14, 20)
+  // --- 3. REPORT GENERATOR ---
+  const GenerateReport = () => {
+    const doc = new jsPDF();
+    const pageWidth = doc.internal.pageSize.getWidth();
+    const pageHeight = doc.internal.pageSize.getHeight();
+    const today = new Date();
+    const brandColor = [15, 23, 42]; // Slate 900
     
-    doc.setFontSize(10)
-    doc.setTextColor(100)
-    doc.text(`Report ID: AUD-${Date.now()}`, 14, 28)
-    doc.text(`Generated: ${today.toLocaleString()}`, 14, 33)
+    // Metrics
+    const totalOrders = dashboardData.orders || 1;
+    const aov = dashboardData.revenue / totalOrders;
+    const refundRate = ((dashboardData.refundPending + dashboardData.refundApproved) / totalOrders) * 100;
 
-    // Snapshot
-    doc.setFillColor(248, 250, 252)
-    doc.rect(14, 40, pageWidth - 28, 25, 'F')
-    doc.setFontSize(12)
-    doc.setTextColor(0)
-    doc.text("Current System Snapshot", 18, 48)
-    doc.setFontSize(10)
-    doc.setTextColor(71, 85, 105)
-    doc.text(`Active Stores: ${dashboardData.stores}`, 18, 56)
-    doc.text(`Total Revenue: ${currency}${dashboardData.revenue.toLocaleString()}`, 80, 56)
-    doc.text(`Total Orders: ${dashboardData.orders}`, 150, 56)
+    // --- A. Header ---
+    doc.setFillColor(...brandColor);
+    doc.rect(0, 0, pageWidth, 40, 'F');
+    doc.setFontSize(24);
+    doc.setTextColor(255, 255, 255);
+    doc.setFont("helvetica", "bold");
+    doc.text("DREAMSAVER", 14, 20);
+    doc.setFontSize(12);
+    doc.setFont("helvetica", "normal");
+    doc.text("Executive Performance Report", 14, 28);
+    doc.setFontSize(10);
+    doc.text(`Date: ${today.toLocaleDateString()}`, pageWidth - 14, 24, { align: 'right' });
 
-    // Real Data Table
-    doc.setFontSize(14)
-    doc.setTextColor(0)
-    doc.text("Transaction Audit Logs", 14, 75)
+    // --- B. KPI Grid ---
+    let yPos = 55;
+    doc.setFontSize(14);
+    doc.setTextColor(...brandColor);
+    doc.text("1. Performance Overview", 14, yPos);
+    
+    const cardWidth = 45;
+    const cardHeight = 25;
+    const gap = 5;
+    const startX = 14;
+    yPos += 5;
 
-    const auditRows = dashboardData.allOrders.map(order => [
-        order.id || 'ERR',
+    const stats = [
+        { label: "Total Revenue", value: formatCurrency(dashboardData.revenue) },
+        { label: "Active Stores", value: dashboardData.stores.toString() },
+        { label: "Total Orders", value: dashboardData.orders.toString() },
+        { label: "Products", value: dashboardData.products.toString() }
+    ];
+
+    stats.forEach((stat, index) => {
+        const x = startX + (index * (cardWidth + gap));
+        doc.setFillColor(248, 250, 252);
+        doc.setDrawColor(226, 232, 240);
+        doc.roundedRect(x, yPos, cardWidth, cardHeight, 3, 3, 'FD');
+        doc.setFontSize(9);
+        doc.setTextColor(100, 116, 139);
+        doc.text(stat.label, x + 5, yPos + 8);
+        doc.setFontSize(12); // Slightly smaller font for values to fit
+        doc.setTextColor(...brandColor);
+        doc.setFont("helvetica", "bold");
+        doc.text(stat.value, x + 5, yPos + 18);
+    });
+
+    // --- C. Efficiency Metrics ---
+    yPos += cardHeight + 15;
+    doc.setFontSize(14);
+    doc.setTextColor(...brandColor);
+    doc.text("2. Operational Efficiency", 14, yPos);
+    yPos += 8;
+    
+    doc.setFontSize(10);
+    doc.setFont("helvetica", "bold");
+    doc.setTextColor(71, 85, 105);
+    doc.text("Average Order Value:", 14, yPos);
+    doc.setFont("helvetica", "normal");
+    doc.text(formatCurrency(aov), 60, yPos);
+
+    doc.setFont("helvetica", "bold");
+    doc.text("Refund Rate:", 100, yPos);
+    doc.setFont("helvetica", "normal");
+    doc.text(`${refundRate.toFixed(1)}%`, 130, yPos);
+
+    // --- D. Transaction Logs Table ---
+    yPos += 15;
+    doc.setFontSize(14);
+    doc.setTextColor(...brandColor);
+    doc.setFont("helvetica", "bold");
+    doc.text("3. Recent Transaction Logs", 14, yPos);
+
+    const auditRows = dashboardData.allOrders.slice(0, 10).map(order => [
+        order.id ? order.id.substring(0, 8) : 'ERR',
         order.createdAt ? new Date(order.createdAt).toLocaleDateString() : 'N/A',
         order.customer || 'Guest',
-        'ORDER_PLACED',
-        `${currency}${order.total || 0}`,
+        'ORDER',
+        formatCurrency(order.total || 0),
         order.status || 'PENDING'
-    ])
-
-    if (auditRows.length === 0) {
-        auditRows.push(['-', '-', 'No records found', '-', '-', '-'])
-    }
+    ]);
 
     autoTable(doc, {
-      startY: 80,
-      head: [['Ref ID', 'Date', 'User', 'Event Type', 'Amount', 'Status']],
-      body: auditRows,
-      theme: 'grid',
-      headStyles: { fillColor: [15, 23, 42], textColor: 255, fontSize: 10 },
-      bodyStyles: { fontSize: 9, cellPadding: 3 },
-      alternateRowStyles: { fillColor: [241, 245, 249] },
-    })
+        startY: yPos + 5,
+        head: [['Ref ID', 'Date', 'User', 'Type', 'Amount', 'Status']],
+        body: auditRows,
+        theme: 'grid',
+        headStyles: { fillColor: brandColor, textColor: 255, fontSize: 9 },
+        bodyStyles: { fontSize: 8, cellPadding: 3, textColor: 50 },
+        columnStyles: { 4: { halign: 'right' } }
+    });
 
-    const finalY = doc.lastAutoTable.finalY + 20
-    doc.setFontSize(8)
-    doc.setTextColor(150)
-    doc.text("This document is a computer-generated audit report and is valid without a signature.", 14, finalY)
-    doc.text("DreamSaver Administrative Systems © 2024", 14, finalY + 5)
+    // --- E. Daily Revenue Table ---
+    let finalY = doc.lastAutoTable.finalY + 15;
+    
+    if (finalY + 60 > pageHeight) {
+        doc.addPage();
+        finalY = 20;
+    }
 
-    doc.save(`DreamSaver_Audit_${today.toISOString().split('T')[0]}.pdf`)
-    toast.success("Audit report generated successfully!")
+    doc.setFontSize(14);
+    doc.setTextColor(...brandColor);
+    doc.setFont("helvetica", "bold");
+    doc.text("4. Daily Revenue Breakdown (Last 7 Days)", 14, finalY);
+
+    const revenueRows = chartData.map(day => [
+        day.name,
+        day.orders,
+        formatCurrency(day.revenue)
+    ]);
+
+    autoTable(doc, {
+        startY: finalY + 5,
+        head: [['Date', 'Total Orders', 'Daily Revenue']],
+        body: revenueRows,
+        theme: 'striped',
+        headStyles: { fillColor: [71, 85, 105], textColor: 255, fontSize: 10 },
+        bodyStyles: { fontSize: 9, cellPadding: 3 },
+        columnStyles: { 
+            1: { halign: 'center' },
+            2: { halign: 'right', fontStyle: 'bold', textColor: [16, 185, 129] }
+        }
+    });
+
+    // Footer
+    const totalPages = doc.internal.getNumberOfPages();
+    for(let i = 1; i <= totalPages; i++) {
+        doc.setPage(i);
+        doc.setFontSize(8);
+        doc.setTextColor(150);
+        doc.text(`Page ${i} of ${totalPages}`, pageWidth / 2, pageHeight - 10, { align: 'center' });
+    }
+
+    doc.save(`DreamSaver_Audit_${today.toISOString().split('T')[0]}.pdf`);
   }
 
   useEffect(() => {
@@ -187,7 +271,7 @@ export default function AdminDashboard() {
     },
     {
       title: 'Total Revenue',
-      value: currency + dashboardData.revenue.toLocaleString(),
+      value: formatCurrency(dashboardData.revenue), // Use Helper
       icon: CircleDollarSignIcon,
       gradient: 'from-emerald-500 to-teal-600',
       bgLight: 'bg-emerald-50/50',
@@ -248,12 +332,6 @@ export default function AdminDashboard() {
 
   return (
     <div className="relative min-h-[85vh] w-full bg-slate-50/50">
-      {/* Decorative Background */}
-      <div className="absolute top-0 left-0 w-full h-full overflow-hidden -z-10">
-        <div className="absolute -top-[10%] -left-[10%] w-[40%] h-[40%] rounded-full bg-blue-100/50 blur-3xl opacity-60" />
-        <div className="absolute top-[20%] -right-[10%] w-[30%] h-[30%] rounded-full bg-purple-100/50 blur-3xl opacity-60" />
-      </div>
-
       <div className="max-w-7xl mx-auto space-y-8 mb-24 px-4 sm:px-6 lg:px-8 py-8">
         
         <div className="flex flex-col md:flex-row md:items-center justify-between gap-6">
@@ -272,11 +350,11 @@ export default function AdminDashboard() {
 
           <div className="flex flex-wrap items-center gap-3">
             <button 
-              onClick={handleGenerateAuditReport}
+              onClick={GenerateReport}
               className="flex items-center gap-2 bg-slate-900 text-white px-4 py-2 rounded-full shadow-lg shadow-slate-900/20 hover:bg-slate-800 hover:scale-105 transition-all active:scale-95"
             >
               <Download size={16} />
-              <span className="text-sm font-medium">Download Audit</span>
+              <span className="text-sm font-medium">Download Report</span>
             </button>
             
             <div className="flex items-center gap-2 bg-white/80 backdrop-blur-sm px-4 py-2 rounded-full border border-blue-100 shadow-sm cursor-default">
@@ -289,7 +367,7 @@ export default function AdminDashboard() {
           </div>
         </div>
 
-        {/* 1. Main Stats Grid */}
+        {/* Stats Grids */}
         <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-6">
           {mainStats.map((card, index) => (
             <div key={index} className="group relative bg-white rounded-3xl p-6 border border-slate-100 shadow-sm hover:shadow-xl hover:shadow-slate-200/50 transition-all duration-300 ease-out hover:-translate-y-1 overflow-hidden">
@@ -309,7 +387,6 @@ export default function AdminDashboard() {
           ))}
         </div>
 
-        {/* 2. Order Status Grid */}
         <div>
           <h2 className="text-xl font-bold text-slate-800 mb-4 px-1">Order Status Overview</h2>
           <div className="grid grid-cols-1 md:grid-cols-3 gap-6">
@@ -330,7 +407,7 @@ export default function AdminDashboard() {
           </div>
         </div>
 
-        {/* 3. Analytics Chart Section (Full Width Now) */}
+        {/* Analytics Chart Section */}
         <div className="w-full">
            <div className="bg-white rounded-3xl border border-slate-100 shadow-sm p-6">
               <div className="flex items-center justify-between mb-6">
@@ -340,7 +417,7 @@ export default function AdminDashboard() {
                  </div>
               </div>
 
-              <div className="h-[350px] w-full">
+              <div id="revenue-chart" className="h-[350px] w-full bg-white p-2"> 
                 <ResponsiveContainer width="100%" height="100%">
                   <AreaChart data={chartData} margin={{ top: 10, right: 10, left: -20, bottom: 0 }}>
                     <defs>
@@ -357,14 +434,18 @@ export default function AdminDashboard() {
                       tick={{fill: '#64748b', fontSize: 12}} 
                       dy={10}
                     />
+                    {/* ✅ Y-AXIS: Formatted Numbers */}
                     <YAxis 
                       axisLine={false} 
                       tickLine={false} 
                       tick={{fill: '#64748b', fontSize: 12}} 
+                      tickFormatter={(value) => formatCurrency(value)}
                     />
+                    {/* ✅ TOOLTIP: Formatted Numbers */}
                     <Tooltip 
                       contentStyle={{ backgroundColor: '#fff', borderRadius: '12px', border: '1px solid #e2e8f0', boxShadow: '0 4px 6px -1px rgb(0 0 0 / 0.1)' }}
                       itemStyle={{ fontSize: '12px', fontWeight: 600 }}
+                      formatter={(value) => [formatCurrency(value), 'Revenue']}
                     />
                     <Area 
                       type="monotone" 
