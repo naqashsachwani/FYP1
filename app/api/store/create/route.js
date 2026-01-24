@@ -8,13 +8,9 @@ export async function POST(request) {
     const { userId } = getAuth(request)
     if (!userId) return NextResponse.json({ error: "Unauthorized" }, { status: 401 })
 
-    // Check if store already exists
-    const existingStore = await prisma.store.findUnique({ where: { userId } })
-    if (existingStore) return NextResponse.json({ error: "Store already exists" }, { status: 400 })
-
     const formData = await request.formData()
     
-    // Core Store Info
+    // Extract Data
     const name = formData.get("name")
     const username = formData.get("username")
     const description = formData.get("description")
@@ -22,8 +18,6 @@ export async function POST(request) {
     const contact = formData.get("contact")
     const address = formData.get("address")
     const imageFile = formData.get("image")
-
-    // Application Info
     const cnic = formData.get("cnic")
     const taxId = formData.get("taxId")
     const bankName = formData.get("bankName")
@@ -33,8 +27,8 @@ export async function POST(request) {
       return NextResponse.json({ error: "Missing required fields" }, { status: 400 })
     }
 
-    // Upload Logo
-    let logoUrl = ""
+    // Handle Image Upload
+    let logoUrl = null
     if (imageFile && typeof imageFile !== "string") {
       const buffer = Buffer.from(await imageFile.arrayBuffer())
       const uploadRes = await imagekit.upload({
@@ -45,9 +39,66 @@ export async function POST(request) {
       logoUrl = uploadRes.url
     }
 
-    // ✅ TRANSACTION: Create Store AND Application
+    // Check for existing store
+    const existingStore = await prisma.store.findUnique({ where: { userId } })
+
+    // ✅ LOGIC UPDATE: Resubmission Handling
+    if (existingStore) {
+        if (existingStore.status === 'approved') {
+            return NextResponse.json({ error: "Store already exists" }, { status: 400 })
+        } else if (existingStore.status === 'pending') {
+            return NextResponse.json({ error: "Application already under review" }, { status: 400 })
+        }
+        
+        // If status is 'rejected' (or anything else), we ALLOW update (Resubmission)
+        await prisma.$transaction(async (tx) => {
+            // 1. Update Store
+            const updateData = {
+                name, username, description, email, contact, address,
+                status: "pending", // Reset to pending
+                isActive: false
+            }
+            if (logoUrl) updateData.logo = logoUrl // Only update logo if a new one was uploaded
+
+            await tx.store.update({
+                where: { id: existingStore.id },
+                data: updateData
+            })
+
+            // 2. Update Application (or recreate if missing)
+            const appData = {
+                businessName: name,
+                contactEmail: email,
+                contactPhone: contact,
+                address: address,
+                cnic: cnic,
+                taxId: taxId || null,
+                bankName: bankName,
+                accountNumber: accountNumber,
+                status: "PENDING", // Reset to pending
+                reviewNotes: null, // Clear previous rejection notes
+                reviewedBy: null,
+                reviewedAt: null
+            }
+            
+            // Upsert ensures we update if exists, create if somehow missing
+            await tx.storeApplication.upsert({
+                where: { storeId: existingStore.id },
+                update: appData,
+                create: {
+                    userId,
+                    storeId: existingStore.id,
+                    ...appData,
+                    documents: { logo: logoUrl || existingStore.logo }
+                }
+            })
+        })
+
+        return NextResponse.json({ message: "Application resubmitted successfully!" })
+    }
+
+    // ✅ NEW CREATION LOGIC (For fresh users)
     await prisma.$transaction(async (tx) => {
-      // 1. Create Store (Inactive initially)
       const newStore = await tx.store.create({
         data: {
           userId,
@@ -57,13 +108,12 @@ export async function POST(request) {
           email,
           contact,
           address,
-          logo: logoUrl,
+          logo: logoUrl || "", 
           status: "pending",
           isActive: false 
         }
       })
 
-      // 2. Create Store Application
       await tx.storeApplication.create({
         data: {
           userId,
@@ -76,7 +126,7 @@ export async function POST(request) {
           taxId: taxId || null,
           bankName: bankName,
           accountNumber: accountNumber,
-          documents: { logo: logoUrl }, // Storing logo ref in docs for now
+          documents: { logo: logoUrl },
           status: "PENDING"
         }
       })

@@ -6,9 +6,17 @@ export async function GET(request) {
   const { userId } = getAuth(request)
   if (!userId) return NextResponse.json({ exists: false })
 
+  // ✅ Fetch full details including the application to get review notes
   const store = await prisma.store.findUnique({
     where: { userId },
-    select: { status: true, isActive: true }
+    include: {
+      storeApplication: {
+        select: {
+          reviewNotes: true,
+          status: true
+        }
+      }
+    }
   })
 
   if (store) {
