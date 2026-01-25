@@ -48,7 +48,7 @@ export async function POST(req, { params }) {
         },
       });
 
-      // B. Create TRANSACTION Record (Added this)
+      // B. Create TRANSACTION Record
       await tx.transaction.create({
         data: {
           userId,
@@ -57,7 +57,7 @@ export async function POST(req, { params }) {
           currency: "PKR",
           provider: "STRIPE",
           status: "COMPLETED", 
-          providerPaymentId: newDeposit.receiptNumber, // Link via receipt
+          providerPaymentId: newDeposit.receiptNumber,
           metadata: {
             type: "GOAL_DEPOSIT",
             source: "STRIPE_CHECKOUT"
@@ -75,14 +75,22 @@ export async function POST(req, { params }) {
       // D. Check for Completion
       const newStatus = totalSavedAmount >= Number(goal.targetAmount) ? "COMPLETED" : "ACTIVE";
 
+      // ✅ FIX: PREPARE UPDATE DATA
+      // We only want to update endDate if the goal is actually completed.
+      // If it's still active, we pass 'undefined' so Prisma ignores the field (keeping the old date).
+      const updateData = {
+        saved: totalSavedAmount,
+        status: newStatus,
+      };
+
+      if (newStatus === "COMPLETED") {
+          updateData.endDate = new Date();
+      }
+
       // E. Update Goal Status
       const updatedGoal = await tx.goal.update({
         where: { id: goalId },
-        data: {
-          saved: totalSavedAmount,
-          status: newStatus,
-          endDate: newStatus === "COMPLETED" ? new Date() : null,
-        },
+        data: updateData, // ✅ Use the safe object
         include: { deposits: true, product: true },
       });
 

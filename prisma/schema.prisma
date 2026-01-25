@@ -28,7 +28,6 @@ enum TransactionStatus {
   REFUNDED
 }
 
-// Removed InvoiceStatus enum as it is no longer used
 enum EscrowStatus {
   HELD
   RELEASED
@@ -66,7 +65,7 @@ enum DeliveryStatus {
 enum NotificationChannel {
   IN_APP
   EMAIL
-  SMS
+  // SMS removed
 }
 
 enum NotificationType {
@@ -77,11 +76,7 @@ enum NotificationType {
   PAYMENT_CONFIRMATION
 }
 
-enum DepositFrequency {
-  DAILY
-  WEEKLY
-  MONTHLY
-}
+// DepositFrequency enum removed
 
 // ---------- MODELS ----------
 
@@ -104,8 +99,6 @@ model User {
   refunds           Refund[]           @relation("UserRefunds")
   storeApplications StoreApplication[]
   notifications     Notification[]
-  // Removed auditLogs and createdAuditLogs relations
-  // Removed invoices relation
 
   createdAt DateTime @default(now())
   updatedAt DateTime @updatedAt
@@ -189,7 +182,6 @@ model Order {
   escrows        Escrow[]
   priceLocks     PriceLock[]
   ratings        Rating[]
-  // Removed invoices relation
 
   @@index([userId])
   @@index([storeId])
@@ -264,31 +256,31 @@ model Coupon {
 }
 
 model Goal {
-  id              String            @id @default(cuid())
-  userId          String
-  productId       String?
-  targetAmount    Decimal           @db.Decimal(18, 2)
-  saved           Decimal           @db.Decimal(18, 2) @default(0)
-  status          GoalStatus        @default(ACTIVE)
-  startDate       DateTime?         @default(now())
-  endDate         DateTime?
-  frequency       DepositFrequency?
-  nextDepositDate DateTime?
-  priceLocked     Boolean           @default(true)
-  lockedPrice     Decimal           @db.Decimal(18, 2)
+  id           String     @id @default(cuid())
+  userId       String
+  productId    String?
+  targetAmount Decimal    @db.Decimal(18, 2)
+  saved        Decimal    @db.Decimal(18, 2) @default(0)
+  status       GoalStatus @default(ACTIVE)
+  startDate    DateTime?  @default(now())
+  endDate      DateTime?
+  
+  // Frequency and nextDepositDate columns removed
+
+  priceLocked  Boolean    @default(true)
+  lockedPrice  Decimal    @db.Decimal(18, 2)
 
   // Relations
-  user           User           @relation(fields: [userId], references: [id], onDelete: Cascade)
-  product        Product?       @relation(fields: [productId], references: [id])
-  deposits       Deposit[]
-  delivery       Delivery?
-  notifications  Notification[]
-  refundRequest  RefundRequest? @relation("GoalRefundRequest")
-  refund         Refund?        @relation("GoalRefund")
-  transactions   Transaction[]
-  escrow         Escrow?        @relation("GoalEscrow")
-  priceLock      PriceLock?     @relation("GoalPriceLock")
-  // Removed invoices relation
+  user          User            @relation(fields: [userId], references: [id], onDelete: Cascade)
+  product       Product?        @relation(fields: [productId], references: [id])
+  deposits      Deposit[]
+  delivery      Delivery?
+  notifications Notification[]
+  refundRequest RefundRequest?  @relation("GoalRefundRequest")
+  refund        Refund?         @relation("GoalRefund")
+  transactions  Transaction[]
+  escrow        Escrow?         @relation("GoalEscrow")
+  priceLock     PriceLock?      @relation("GoalPriceLock")
 
   createdAt DateTime @default(now())
   updatedAt DateTime @updatedAt
@@ -337,8 +329,8 @@ model Delivery {
   coordinates     String?
 
   // Relations
-  goal             Goal               @relation(fields: [goalId], references: [id], onDelete: Cascade)
-  notifications    Notification[]
+  goal              Goal               @relation(fields: [goalId], references: [id], onDelete: Cascade)
+  notifications     Notification[]
   deliveryTrackings DeliveryTracking[]
 
   createdAt DateTime @default(now())
@@ -396,22 +388,22 @@ model Refund {
 }
 
 model StoreApplication {
-  id           String                 @id @default(cuid())
-  userId       String
-  storeId      String?                @unique
-  businessName String
-  documents    Json
-  contactEmail String
-  contactPhone String?
-  address      String?
-  taxId        String?
-  cnic         String?
+  id            String                 @id @default(cuid())
+  userId        String
+  storeId       String?                @unique
+  businessName  String
+  documents     Json
+  contactEmail  String
+  contactPhone  String?
+  address       String?
+  taxId         String?
+  cnic          String?
   accountNumber String?
-  bankName     String?
-  status       StoreApplicationStatus @default(PENDING)
-  reviewedBy   String?
-  reviewedAt   DateTime?
-  reviewNotes  String?
+  bankName      String?
+  status        StoreApplicationStatus @default(PENDING)
+  reviewedBy    String?
+  reviewedAt    DateTime?
+  reviewNotes   String?
 
   // Relations
   user  User   @relation(fields: [userId], references: [id], onDelete: Cascade)
@@ -428,16 +420,16 @@ model StoreApplication {
 }
 
 model PriceLock {
-  id            String   @id @default(cuid())
+  id            String    @id @default(cuid())
   productId     String
-  goalId        String?  @unique
+  goalId        String?   @unique
   orderId       String?
-  lockedPrice   Decimal  @db.Decimal(18, 2)
-  originalPrice Decimal  @db.Decimal(18, 2)
+  lockedPrice   Decimal   @db.Decimal(18, 2)
+  originalPrice Decimal   @db.Decimal(18, 2)
   lockedBy      String?
-  lockedAt      DateTime @default(now())
+  lockedAt      DateTime  @default(now())
   expiresAt     DateTime?
-  status        String   @default("ACTIVE")
+  status        String    @default("ACTIVE")
   storeId       String?
 
   // Relations
