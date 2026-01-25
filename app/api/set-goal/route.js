@@ -2,7 +2,6 @@ import prisma from "@/lib/prisma";
 import { getAuth } from "@clerk/nextjs/server";
 import { NextResponse } from "next/server";
 
-// ✅ FORCE DYNAMIC: Prevents Next.js from caching the response
 export const dynamic = 'force-dynamic';
 
 const normalize = (obj) => JSON.parse(JSON.stringify(obj, (key, value) => 
@@ -24,7 +23,6 @@ export async function GET(request) {
     const goalsWithProgress = goals.map(goal => ({
       ...goal,
       progressPercent: goal.targetAmount > 0 ? (Number(goal.saved) / Number(goal.targetAmount)) * 100 : 0,
-      remainingAmount: Number(goal.targetAmount) - Number(goal.saved),
     }));
 
     return NextResponse.json({ goals: normalize(goalsWithProgress) });
@@ -44,29 +42,19 @@ export async function POST(request) {
 
     const { productId, targetAmount, targetDate, status = "ACTIVE" } = body;
 
-    console.log(`[API] Goal Request for Product: ${productId} | Status: ${status}`);
+    // ✅ DEBUG LOG: Check terminal to see if date is coming
+    console.log(`[API] Create Goal - Product: ${productId}, Date: ${targetDate}`);
 
     if (!productId) return NextResponse.json({ error: "productId is required" }, { status: 400 });
     const amountNum = Number(targetAmount);
-    if (!amountNum || amountNum <= 0) return NextResponse.json({ error: "targetAmount must be positive" }, { status: 400 });
 
-    // ============================================================
-    // 🛑 LOGIC SPLIT
-    // ============================================================
-
-    // CASE 1: UPDATING A DRAFT
-    // Only if status is explicitly "SAVED", we look for an existing draft to update.
+    // CASE 1: UPDATING A DRAFT (SAVED)
     if (status === "SAVED") {
         const existingDraft = await prisma.goal.findFirst({
-            where: { 
-                userId, 
-                productId,
-                status: "SAVED" 
-            } 
+            where: { userId, productId, status: "SAVED" } 
         });
 
         if (existingDraft) {
-            console.log("[API] Updating existing DRAFT...");
             const updatedDraft = await prisma.goal.update({
                 where: { id: existingDraft.id },
                 data: {
@@ -78,30 +66,27 @@ export async function POST(request) {
         }
     }
 
-    // CASE 2: STARTING A GOAL (ACTIVE)
-    // We intentionally SKIP looking for existing goals.
-    // This forces the creation of a BRAND NEW GOAL ID.
-    console.log("[API] --- CREATING FRESH GOAL ---");
-
+    // CASE 2: STARTING A NEW GOAL (ACTIVE)
     const product = await prisma.product.findUnique({ where: { id: productId } });
     if (!product) return NextResponse.json({ error: "Product not found" }, { status: 404 });
 
+    // ✅ Ensure valid date object or null
+    const finalEndDate = targetDate ? new Date(targetDate) : null;
+
     const result = await prisma.$transaction(async (tx) => {
-      // 1. Create NEW Goal
       const newGoal = await tx.goal.create({
         data: {
           userId,
           productId,
           targetAmount: amountNum,
-          endDate: targetDate ? new Date(targetDate) : null,
-          status: status, // "ACTIVE"
+          endDate: finalEndDate, // ✅ Saving the date
+          status: status,
           saved: 0,
           lockedPrice: product.price,
           priceLocked: true,
         },
       });
 
-      // 2. Create NEW PriceLock
       await tx.priceLock.create({
         data: {
           productId,
@@ -111,14 +96,13 @@ export async function POST(request) {
           lockedBy: userId,
           status: "ACTIVE",
           storeId: product.storeId,
-          expiresAt: targetDate ? new Date(targetDate) : null,
+          expiresAt: finalEndDate, // ✅ Syncing PriceLock expiry
         },
       });
 
       return newGoal;
     });
 
-    console.log("[API] New Goal Created ID:", result.id);
     return NextResponse.json({ message: "New goal created", goal: normalize(result) });
 
   } catch (err) {

@@ -6,7 +6,7 @@ import ProgressChart from "@/components/ProgressChart";
 
 export default function GoalsPage() {
   const [goals, setGoals] = useState([]);
-  const [loading, setLoading] = useState(true); // Added loading state
+  const [loading, setLoading] = useState(true);
 
   useEffect(() => {
     fetch("/api/goals")
@@ -26,12 +26,18 @@ export default function GoalsPage() {
           const target = Number(goal.targetAmount);
           const percent = target > 0 ? (totalSaved / target) * 100 : 0;
 
-          // 3. Return the goal with the corrected 'saved' value
+          // 3. FIX: Create a valid Date object for the card
+          // We check 'endDate' (standard) and 'targetDate' (just in case)
+          const dateString = goal.endDate || goal.targetDate;
+          const validDate = dateString ? new Date(dateString) : null;
+
+          // 4. Return the goal with the corrected values
           return {
             ...goal,
-            saved: totalSaved, // Overwrite the database value
+            saved: totalSaved,
             targetAmount: target,
             progressPercent: percent,
+            endDate: validDate, // ✅ This fixes the "--" issue
           };
         });
 

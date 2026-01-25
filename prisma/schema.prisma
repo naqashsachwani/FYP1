@@ -53,6 +53,7 @@ enum GoalStatus {
   COMPLETED
   CANCELLED
   REFUNDED
+  SAVED
 }
 
 enum DeliveryStatus {

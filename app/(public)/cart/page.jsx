@@ -3,60 +3,41 @@
 import { useEffect, useState } from "react";
 import { useRouter } from "next/navigation";
 import Image from "next/image";
-import { Trash2Icon, CheckCircleIcon, PiggyBank } from "lucide-react"; 
+import { Trash2Icon, CheckCircleIcon } from "lucide-react"; 
 
 export default function CartPage() {
   const currency = process.env.NEXT_PUBLIC_CURRENCY_SYMBOL || "Rs";
   const router = useRouter();
 
-  const [savedGoals, setSavedGoals] = useState([]);
+  // Removed savedGoals state
   const [activeGoals, setActiveGoals] = useState([]);
   const [loadingGoals, setLoadingGoals] = useState(true);
 
   // ================= GOAL LOGIC =================
   
-  // 1. Fetch Goals & Separate them
+  // 1. Fetch Goals (Optimized to only fetch Active goals)
   const fetchGoals = async () => {
     try {
       setLoadingGoals(true);
       const res = await fetch("/api/goals", { cache: "no-store" });
       const data = await res.json();
       
-      const now = new Date();
-      const validSaved = [];
       const validActive = [];
 
       for (const goal of (data.goals || [])) {
           
-          // 1. Hide Refunded/Cancelled Goals
-          if (goal.status === 'REFUNDED' || goal.status === 'CANCELLED') {
+          // Skip Refunded, Cancelled, OR Saved (Drafts)
+          if (goal.status === 'REFUNDED' || goal.status === 'CANCELLED' || goal.status === 'SAVED') {
             continue; 
           }
 
-          // 2. Auto-Delete Logic for Expired Drafts
-          if (goal.status === 'SAVED' && goal.endDate) {
-            const endDate = new Date(goal.endDate);
-            if (endDate < now) {
-                try {
-                  // Silently delete from DB
-                  await fetch(`/api/goals/${goal.id}`, { method: 'DELETE' });
-                } catch (e) { console.error(e); }
-                continue; // Skip showing it
-            }
-          }
-
+          // Calculate total saved
           const totalSaved = (goal.deposits || []).reduce((sum, dep) => sum + Number(dep.amount), 0);
           const processedGoal = { ...goal, saved: totalSaved };
 
-          // 3. Separate into lists
-          if (goal.status === 'SAVED') {
-            validSaved.push(processedGoal);
-          } else {
-            validActive.push(processedGoal);
-          }
+          validActive.push(processedGoal);
       }
 
-      setSavedGoals(validSaved);
       setActiveGoals(validActive);
 
     } catch (err) {
@@ -84,12 +65,9 @@ export default function CartPage() {
       const res = await fetch(`/api/goals/${goal.id}`, { method: "DELETE" });
       
       if (res.ok) {
-        // Update local state to remove item immediately
-        if (goal.status === 'SAVED') {
-            setSavedGoals(prev => prev.filter(g => g.id !== goal.id));
-        } else {
-            setActiveGoals(prev => prev.filter(g => g.id !== goal.id));
-        }
+        // Update local state immediately
+        setActiveGoals(prev => prev.filter(g => g.id !== goal.id));
+        
         if (hasFunds) alert("Goal cancelled. Refund processed.");
       } else {
         const data = await res.json();
@@ -101,13 +79,9 @@ export default function CartPage() {
     }
   };
 
-  // 3. Navigate
+  // 3. Navigate (Simplified)
   const handleGoalClick = (goal) => {
-    if (goal.status === 'SAVED') {
-      router.push(`/set-goal?productId=${goal.product?.id}`);
-    } else {
       router.push(`/goals/${goal.id}`);
-    }
   };
 
   useEffect(() => {
@@ -124,63 +98,10 @@ export default function CartPage() {
 
         <div className="flex flex-col gap-8">
           
-          {/* ================= SECTION 1: SAVED GOALS (Drafts) ================= */}
-          {savedGoals.length > 0 && (
-            <div className="bg-white/80 backdrop-blur-md shadow-lg border border-blue-200 rounded-2xl p-6">
-              <div className="flex items-center gap-3 mb-4">
-                <PiggyBank className="text-blue-600" size={28} />
-                <div>
-                    <h2 className="text-xl font-bold text-slate-800">Saved Goals (Drafts)</h2>
-                    <p className="text-xs text-slate-500">Finish setting these up to start saving.</p>
-                </div>
-                <span className="ml-auto bg-blue-100 text-blue-700 text-xs font-bold px-3 py-1 rounded-full">
-                  {savedGoals.length} Pending
-                </span>
-              </div>
-
-              <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
-                {savedGoals.map((goal) => (
-                    <div
-                      key={goal.id}
-                      onClick={() => handleGoalClick(goal)}
-                      className="group relative p-4 border border-blue-100 bg-blue-50/30 rounded-xl hover:border-blue-300 hover:shadow-md cursor-pointer transition-all"
-                    >
-                      <div className="flex gap-4 items-center">
-                        <div className="h-14 w-14 bg-white rounded-lg overflow-hidden border border-blue-100 flex-shrink-0">
-                           {goal.product?.images?.[0] ? (
-                              <Image 
-                                src={goal.product.images[0]} alt={goal.product.name} 
-                                width={56} height={56} className="object-cover w-full h-full"
-                              />
-                            ) : (
-                              <div className="w-full h-full flex items-center justify-center text-slate-400 text-[10px]">No Img</div>
-                            )}
-                        </div>
-                        <div className="flex-1 min-w-0">
-                            <h3 className="font-semibold text-slate-800 truncate">{goal.product?.name}</h3>
-                            <p className="text-xs text-slate-500">Target: {currency}{Number(goal.targetAmount).toLocaleString()}</p>
-                            {goal.endDate && (
-                                <p className="text-[10px] text-red-500 mt-1">Expires: {new Date(goal.endDate).toLocaleDateString()}</p>
-                            )}
-                        </div>
-                        <button
-                            onClick={(e) => { e.stopPropagation(); handleDeleteGoal(goal); }}
-                            className="p-2 text-slate-400 hover:text-red-500 hover:bg-red-50 rounded-lg transition-colors"
-                        >
-                            <Trash2Icon size={18} />
-                        </button>
-                      </div>
-                    </div>
-                ))}
-              </div>
-            </div>
-          )}
-
-          {/* ================= SECTION 2: ACTIVE GOALS ================= */}
+          {/* ================= SECTION: ACTIVE GOALS ONLY ================= */}
           <div className="bg-white/80 backdrop-blur-md shadow-lg border border-slate-200 rounded-2xl p-6">
             <div className="mb-6">
               <h2 className="text-xl font-bold text-slate-800">Active Goals</h2>
-              {/* Badge is completely removed from here */}
             </div>
 
             {loadingGoals ? (
@@ -264,7 +185,7 @@ export default function CartPage() {
             ) : (
               <div className="text-center py-10 bg-slate-50/50 rounded-xl border border-dashed border-slate-200">
                 <p className="text-slate-500">You have no active goals yet.</p>
-                <p className="text-xs text-slate-400 mt-1">Start a goal from your Saved Goals above!</p>
+                <p className="text-xs text-slate-400 mt-1">Browse our shop to start your first goal!</p>
               </div>
             )}
           </div>

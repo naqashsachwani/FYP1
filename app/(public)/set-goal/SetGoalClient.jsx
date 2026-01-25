@@ -42,28 +42,24 @@ export default function SetGoalClient() {
   const [termsAccepted, setTermsAccepted] = useState(false);
   const [showTerms, setShowTerms] = useState(false);
 
-  const [goals, setGoals] = useState([]);
   const [error, setError] = useState(null);
   const [success, setSuccess] = useState(null);
   const [loading, setLoading] = useState(false);
 
+  // Helper to calculate date based on months
   const calcDate = (m) => {
+    if (!m) return "";
     const d = new Date();
     d.setMonth(d.getMonth() + Number(m));
-    return d.toISOString().split("T")[0];
+    return d.toISOString().split("T")[0]; // Returns YYYY-MM-DD
   };
 
   /* ================= FETCH DATA ================= */
   useEffect(() => {
     if (!productId) return;
-
     fetch(`/api/products/${productId}`)
       .then(r => r.json())
       .then(d => setProduct(d.product));
-
-    fetch("/api/set-goal", { cache: "no-store" })
-      .then(r => r.json())
-      .then(d => setGoals(d.goals || []));
   }, [productId]);
 
   /* ================= START GOAL (Active) ================= */
@@ -72,6 +68,7 @@ export default function SetGoalClient() {
     
     // Validation
     if (!period) return setError("Please select a time period.");
+    if (!targetDate) return setError("Target date is invalid. Please re-select period.");
     if (!termsAccepted) return setError("Accept terms first");
 
     setLoading(true);
@@ -81,12 +78,12 @@ export default function SetGoalClient() {
       const res = await fetch("/api/set-goal", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        cache: "no-store", // Ensure we don't hit browser cache
+        cache: "no-store", 
         body: JSON.stringify({
           productId,
           targetAmount: product.price,
-          targetDate,
-          status: "ACTIVE", // ✅ ACTIVE = FORCE NEW CREATION
+          targetDate, // ✅ Ensuring this is sent
+          status: "ACTIVE", 
         }),
       });
 
@@ -96,23 +93,15 @@ export default function SetGoalClient() {
         throw new Error(data.error || "Failed to create goal");
       }
 
-      // 2. Redirect directly to the Goal Details Page
+      // 2. Redirect
       setSuccess("Goal started! Redirecting...");
-      
-      router.refresh(); // Crucial: clear client cache before navigating
+      router.refresh(); 
       router.push(`/goals/${data.goal.id}`); 
 
     } catch (err) {
       setLoading(false);
       setError(err.message);
     }
-  };
-
-  /* ================= DELETE SAVED GOAL ================= */
-  const deleteGoal = async (goalId) => {
-    await fetch(`/api/goals/${goalId}`, { method: "DELETE" });
-    setGoals(goals.filter(g => g.id !== goalId));
-    router.refresh();
   };
 
   return (
@@ -135,9 +124,10 @@ export default function SetGoalClient() {
       <div className="space-y-4">
         <select
           onChange={e => {
-            setPeriod(e.target.value);
-            setTargetDate(calcDate(e.target.value));
-            if (error === "Please select a time period to save your goal.") setError(null);
+            const val = e.target.value;
+            setPeriod(val);
+            setTargetDate(calcDate(val)); // ✅ Updates date state
+            if (error) setError(null);
           }}
           className="w-full border p-2 rounded"
           value={period} 
@@ -147,6 +137,13 @@ export default function SetGoalClient() {
           <option value="6">6 Months</option>
           <option value="12">12 Months</option>
         </select>
+
+        {/* Debugging Visual: Show user the calculated date */}
+        {targetDate && (
+            <p className="text-sm text-gray-500">
+                Goal End Date: <span className="font-semibold">{targetDate}</span>
+            </p>
+        )}
 
         <label className="flex gap-2 text-sm">
           <input type="checkbox" onChange={e => setTermsAccepted(e.target.checked)} />
@@ -163,8 +160,6 @@ export default function SetGoalClient() {
         {success && <p className="text-green-600">{success}</p>}
 
         <div className="flex gap-3">
-          {/* Save Goal Button Removed */}
-          
           <button
             onClick={startGoal}
             disabled={loading}
@@ -174,27 +169,6 @@ export default function SetGoalClient() {
           </button>
         </div>
       </div>
-
-      {/* ================= SAVED GOALS (Previous Drafts) ================= */}
-      {/* We keep this list just in case they have old drafts they want to delete */}
-      {goals.filter(g => g.status === "SAVED").length > 0 && (
-        <div className="mt-8">
-          <h2 className="font-semibold mb-2">Saved Goals</h2>
-          {goals
-            .filter(g => g.status === "SAVED")
-            .map((g, i) => (
-              <div key={`${g.id}-${i}`} className="p-3 border rounded mb-2 flex justify-between">
-                <span>{g.product?.name}</span>
-                <button
-                  onClick={() => deleteGoal(g.id)}
-                  className="text-red-600 text-sm"
-                >
-                  Delete
-                </button>
-              </div>
-            ))}
-        </div>
-      )}
 
       <TermsModal open={showTerms} onClose={() => setShowTerms(false)} />
     </div>
