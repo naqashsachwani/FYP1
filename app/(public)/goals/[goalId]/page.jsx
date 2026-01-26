@@ -3,7 +3,7 @@
 import { useEffect, useState, useRef } from "react";
 import { useParams, useRouter, useSearchParams } from "next/navigation";
 import { Line } from "react-chartjs-2";
-import "chart.js/auto";
+import "chart.js/auto"; // Automatically registers Chart.js components 
 import { FileText, X, Download, FileBarChart } from "lucide-react";
 import GoalCard from "@/components/GoalCard";
 import { useUser } from "@clerk/nextjs";
@@ -11,7 +11,6 @@ import jsPDF from "jspdf";
 import autoTable from "jspdf-autotable";
 
 /* ================= JSPDF GENERATORS ================= */
-
 const generateInvoicePDF = (transaction, product, userName) => {
   const doc = new jsPDF({ orientation: "portrait", unit: "mm", format: "a5" });
   const pageWidth = doc.internal.pageSize.getWidth();
@@ -19,8 +18,7 @@ const generateInvoicePDF = (transaction, product, userName) => {
   const margin = 15;
   const rightEdge = pageWidth - margin;
 
-  // Header
-  doc.setTextColor(5, 150, 105);
+  doc.setTextColor(5, 150, 105); // Emerald Green color branding
   doc.setFontSize(22);
   doc.setFont("helvetica", "bold");
   doc.text("INVOICE", margin, 20);
@@ -30,6 +28,7 @@ const generateInvoicePDF = (transaction, product, userName) => {
   doc.setFont("helvetica", "normal");
   doc.text("DreamSaver Payment Receipt", margin, 26);
 
+  // Decorative Line
   doc.setDrawColor(226, 232, 240);
   doc.setLineWidth(0.5);
   doc.line(margin, 32, rightEdge, 32);
@@ -37,7 +36,7 @@ const generateInvoicePDF = (transaction, product, userName) => {
   const startY = 45;
   const lineHeight = 6;
 
-  // Details
+  // User & Transaction Details
   doc.setFontSize(9);
   doc.setTextColor(148, 163, 184);
   doc.setFont("helvetica", "bold");
@@ -67,7 +66,8 @@ const generateInvoicePDF = (transaction, product, userName) => {
   doc.text(`Date: ${new Date(transaction.createdAt).toLocaleDateString()}`, rightEdge, startY + (lineHeight * 2), { align: "right" });
   doc.text(`Time: ${new Date(transaction.createdAt).toLocaleTimeString()}`, rightEdge, startY + (lineHeight * 3) - 1, { align: "right" });
 
-  // Table
+  // Table Generation
+  // Uses 'autoTable' plugin to handle column widths and styling automatically.
   autoTable(doc, {
     startY: startY + 25,
     head: [['Description', 'Payment Method', 'Amount']],
@@ -85,6 +85,7 @@ const generateInvoicePDF = (transaction, product, userName) => {
     margin: { left: margin, right: margin }
   });
 
+  // Total Calculation
   const finalY = doc.lastAutoTable.finalY + 10;
   doc.setFontSize(12);
   doc.setFont("helvetica", "bold");
@@ -107,6 +108,7 @@ const generateInvoicePDF = (transaction, product, userName) => {
   doc.save(`Invoice_${transaction.receiptNumber?.slice(0, 8)}.pdf`);
 };
 
+
 const generateReportPDF = (deposits, goalName) => {
   const doc = new jsPDF();
   doc.setTextColor(5, 150, 105);
@@ -120,6 +122,7 @@ const generateReportPDF = (deposits, goalName) => {
   doc.text(`Goal: ${goalName}`, 14, 27);
   doc.text(`Generated on: ${new Date().toLocaleDateString()}`, 14, 32);
 
+  // Mapping data for the table body
   const tableData = deposits.map(d => [
     new Date(d.createdAt).toLocaleDateString(),
     new Date(d.createdAt).toLocaleTimeString(),
@@ -215,6 +218,8 @@ export default function GoalDetails() {
   const [successMessage, setSuccessMessage] = useState("");
   const [selectedInvoice, setSelectedInvoice] = useState(null);
 
+  // prevents the deposit API call from firing twice if the React component re-renders
+  // strictly during the "Success" redirect phase.
   const handledRef = useRef(false);
 
   // Fetch Goal
@@ -231,6 +236,10 @@ export default function GoalDetails() {
     }
   };
 
+  /**
+   * DATA NORMALIZATION PATTERN:
+   * APIs return Dates and Numbers as strings.
+   */
   const normalizeAndSetGoal = (goalData) => {
     const deposits = (goalData.deposits || []).map((d) => ({
       ...d,
@@ -239,7 +248,6 @@ export default function GoalDetails() {
     }));
     const calculatedSaved = deposits.reduce((sum, dep) => sum + dep.amount, 0);
 
-    // ✅ FIX: Check both 'endDate' (standard) and 'targetDate' (creation fallback)
     const dateString = goalData.endDate || goalData.targetDate;
     const validEndDate = dateString ? new Date(dateString) : null;
 
@@ -248,9 +256,10 @@ export default function GoalDetails() {
       targetAmount: Number(goalData.targetAmount),
       deposits: deposits,
       saved: calculatedSaved,
-      endDate: validEndDate, // ✅ Set the corrected Date object
+      endDate: validEndDate,
     };
     
+    // Calculate percentage on the fly based on current totals
     normalizedGoal.progressPercent =
       normalizedGoal.targetAmount > 0
         ? (normalizedGoal.saved / normalizedGoal.targetAmount) * 100
@@ -262,13 +271,16 @@ export default function GoalDetails() {
     fetchGoal();
   }, [goalId]);
 
-  // Handle Stripe Success
+  // Handle Stripe Success Logic
   useEffect(() => {
     const payment = searchParams.get("payment");
     const amount = searchParams.get("amount");
+    
+    // IF: User returns from Stripe successfully AND we haven't processed this yet
     if (payment === "success" && amount && !handledRef.current) {
-      handledRef.current = true;
+      handledRef.current = true; // Mark as handled immediately to prevent double-calls
       setSavingDeposit(true);
+      
       fetch(`/api/goals/${goalId}/confirm`, {
         method: "POST",
         headers: { "Content-Type": "application/json" },
@@ -277,12 +289,13 @@ export default function GoalDetails() {
         .then(async (res) => {
           const data = await res.json();
           if (data.success && data.goal) {
-            normalizeAndSetGoal(data.goal);
+            normalizeAndSetGoal(data.goal); // Update state with fresh data
             setSuccessMessage(
               data.goalCompleted
                 ? "🎉 Deposit added and goal completed!"
                 : "✅ Deposit added successfully!"
             );
+            // Remove query params to clean URL
             router.replace(`/goals/${goalId}`);
           } else {
             setSuccessMessage(data.error || "Something went wrong.");
@@ -296,18 +309,19 @@ export default function GoalDetails() {
   if (loading) return <p className="p-4">Loading goal...</p>;
   if (!goal) return <p className="p-4 text-red-500">Goal not found</p>;
 
-  // Prepare Sorted Deposits for Display and Report
+  // Sort deposits (Newest first) for UI list
   const sortedDeposits = [...goal.deposits].sort((a, b) => b.createdAt - a.createdAt);
 
-  // Chart Data
+  // CHART DATA PREPARATION:
   const chartPoints = [
     { date: new Date(goal.createdAt).toLocaleDateString(), amount: 0 },
     ...sortedDeposits.map((d) => ({
       date: d.createdAt.toLocaleDateString(),
       amount: d.amount,
-    })).reverse(),
+    })).reverse(), // Reverse because sortedDeposits is Newest First
   ];
 
+  // Cumulative Sum Logic:
   let runningTotal = 0;
   const cumulativeData = chartPoints.map((p) => {
     runningTotal += p.amount;
@@ -320,13 +334,13 @@ export default function GoalDetails() {
       {
         label: "Total Saved Progress",
         data: cumulativeData,
-        fill: true,
+        fill: true, // Creates the area chart effect
         backgroundColor: "rgba(16,185,129,0.1)",
         borderColor: "rgba(5,150,105,1)",
         pointBackgroundColor: "#fff",
         pointBorderColor: "rgba(5,150,105,1)",
         pointBorderWidth: 2,
-        tension: 0.3,
+        tension: 0.3, // Smooths the line curves
       },
     ],
   };
@@ -335,7 +349,6 @@ export default function GoalDetails() {
 
   return (
     <div className="container mx-auto p-4 max-w-4xl">
-      {/* Invoice Modal */}
       {selectedInvoice && (
         <InvoiceModal
           transaction={selectedInvoice}
@@ -345,14 +358,14 @@ export default function GoalDetails() {
         />
       )}
 
-      {/* Success Message */}
+      {/* Success Message Banner */}
       {successMessage && (
         <div className="mb-4 bg-green-50 text-green-700 p-3 rounded border border-green-200">
           {successMessage}
         </div>
       )}
 
-      {/* Goal Completed Message */}
+      {/* Goal Completed Banner */}
       {goal.status === "COMPLETED" && (
         <div className="mb-4 bg-green-100 text-green-800 p-3 rounded font-semibold border border-green-200">
           🎉 Congratulations! Your goal has been completed.
@@ -362,7 +375,7 @@ export default function GoalDetails() {
       <h1 className="text-2xl font-bold mb-4">{goal.product?.name || "Savings Goal"}</h1>
       <GoalCard goal={goal} />
 
-      {/* Progress Section */}
+      {/* Progress Bar Section */}
       <div className="mt-6">
         <h2 className="text-lg font-semibold mb-2">Progress</h2>
         <div className="w-full bg-slate-200 rounded-full h-6 overflow-hidden relative">
@@ -377,7 +390,6 @@ export default function GoalDetails() {
         <div className="flex justify-between mt-2 text-sm text-slate-600 font-medium">
           <span>Saved: {goal.currency || "Rs"} {goal.saved.toLocaleString()}</span>
           
-          {/* ✅ FIX: Visual Display for End Date */}
           {goal.endDate ? (
              <span className="text-slate-500">
                Ends: <span className="text-red-500">{goal.endDate.toLocaleDateString()}</span>
@@ -390,7 +402,7 @@ export default function GoalDetails() {
         </div>
       </div>
 
-      {/* Chart Section */}
+      {/* Chart Visualization */}
       <div className="mt-8 p-4 bg-white rounded-xl shadow-sm border border-slate-100">
         <h2 className="text-lg font-semibold mb-4">Savings Growth</h2>
         <Line data={chartData} />
@@ -398,7 +410,7 @@ export default function GoalDetails() {
 
       {/* ACTION BUTTONS */}
       <div className="mt-6 flex flex-col sm:flex-row gap-4">
-        {/* 1. Add Deposit Button */}
+        {/* 1. Add Deposit Button (Disabled if goal is complete) */}
         <button
           disabled={savingDeposit || goal.status === "COMPLETED"}
           onClick={() => router.push(`/goals/${goalId}/deposit`)}
@@ -434,6 +446,7 @@ export default function GoalDetails() {
                 </div>
                 <div className="flex items-center gap-6">
                   <span className="font-bold text-emerald-600 text-xl">+ {d.amount.toLocaleString()}</span>
+                  {/* Triggers the Invoice Modal */}
                   <button
                     onClick={() => setSelectedInvoice(d)}
                     className="flex items-center gap-2 text-sm font-medium text-slate-500 hover:text-emerald-700 border border-slate-200 hover:border-emerald-300 rounded-lg px-4 py-2 transition-all bg-white hover:bg-emerald-50 shadow-sm"

@@ -1,5 +1,5 @@
 'use client'
-import { assets } from "@/assets/assets"
+
 import { useEffect, useState } from "react"
 import Image from "next/image"
 import toast from "react-hot-toast"
@@ -10,16 +10,28 @@ import axios from "axios"
 import { Upload, AlertCircle, RefreshCw } from "lucide-react"
 
 export default function CreateStore() {
+  // Authentication hooks from Clerk
   const { user, isLoaded } = useUser()
   const router = useRouter()
   const { getToken } = useAuth()
 
+  // ================= STATE MANAGEMENT =================
+  
+  // Controls the UI mode: 
+  // false = Show Input Form
+  // true  = Show Status Card
   const [alreadySubmitted, setAlreadySubmitted] = useState(false)
+
+  // Stores the current application status ('pending', 'approved', 'rejected')
   const [status, setStatus] = useState("")
   const [loading, setLoading] = useState(true)
+  
+  // UI feedback messages displayed in the Status Card
   const [message, setMessage] = useState("")
+  
   const [rejectionReason, setRejectionReason] = useState("")
 
+  // Form Data State
   const [storeInfo, setStoreInfo] = useState({
     name: "",
     username: "",
@@ -27,16 +39,19 @@ export default function CreateStore() {
     email: "",
     contact: "",
     address: "",
-    image: null,
+    image: null,      
     taxId: "",
     cnic: "",
     bankName: "",
     accountNumber: ""
   })
 
+  // Generic handler for text input changes
   const onChangeHandler = (e) => {
     setStoreInfo({ ...storeInfo, [e.target.name]: e.target.value })
   }
+
+  // ================= DATA FETCHING =================
 
   const fetchSellerStatus = async () => {
     const token = await getToken()
@@ -45,11 +60,14 @@ export default function CreateStore() {
         headers: { Authorization: `Bearer ${token}` },
       })
       
+      // If the backend returns that a store/application exists
       if (data.exists) {
         setStatus(data.store.status)
-        setAlreadySubmitted(true)
+        setAlreadySubmitted(true) // Lock the form view
         
-        // Pre-fill data if user wants to resubmit
+        // PRE-FILL FORM DATA:
+        // Populate the form state with existing data. This is crucial for 
+        // the "Resubmit" flow, so the user doesn't have to re-type everything.
         setStoreInfo(prev => ({
             ...prev,
             name: data.store.name,
@@ -58,15 +76,15 @@ export default function CreateStore() {
             email: data.store.email,
             contact: data.store.contact,
             address: data.store.address,
-            // Assuming image URL is handled by component or requires re-upload
         }))
 
+        // Handle specific status scenarios
         if (data.store.status === "approved") {
             setMessage("Your store has been approved! Redirecting...")
             setTimeout(() => router.push("/store"), 2000)
         } else if (data.store.status === "rejected") {
             setMessage("Your application was rejected.")
-            // Capture rejection notes if available
+            // If the admin left a note, save it to state
             if(data.store.storeApplication?.reviewNotes) {
                 setRejectionReason(data.store.storeApplication.reviewNotes)
             }
@@ -80,10 +98,17 @@ export default function CreateStore() {
     setLoading(false)
   }
 
+  /**
+   * Resubmit Handler
+   * Triggered when a rejected user clicks "Fix & Resubmit".
+   * It flips the view back to the Form so they can edit their pre-filled data.
+   */
   const handleResubmit = () => {
-    setAlreadySubmitted(false) // This reveals the form again
+    setAlreadySubmitted(false) 
     toast("You can now edit and resubmit your application.")
   }
+
+  // ================= FORM SUBMISSION =================
 
   const onSubmitHandler = async (e) => {
     e.preventDefault()
@@ -91,6 +116,8 @@ export default function CreateStore() {
 
     try {
       const token = await getToken()
+      
+      // Use FormData to handle file uploads (image) + text data
       const formData = new FormData()
       
       formData.append("name", storeInfo.name)
@@ -101,25 +128,29 @@ export default function CreateStore() {
       formData.append("address", storeInfo.address)
       if(storeInfo.image) formData.append("image", storeInfo.image) 
 
+      // Financial & Legal details
       formData.append("taxId", storeInfo.taxId)
       formData.append("cnic", storeInfo.cnic)
       formData.append("bankName", storeInfo.bankName)
       formData.append("accountNumber", storeInfo.accountNumber)
 
+      // POST request to create or update the store application
       const { data } = await axios.post("/api/store/create", formData, {
         headers: { Authorization: `Bearer ${token}` },
       })
 
+      // Success Feedback
       toast.success(data.message)
-      setAlreadySubmitted(true)
-      setStatus("pending")
+      setAlreadySubmitted(true) // Switch to Status view
+      setStatus("pending")      // Optimistically update status
       setMessage("Your application is under review.")
-      setRejectionReason("") // Clear any old rejection notes
+      setRejectionReason("")    // Clear old errors
     } catch (error) {
       toast.error(error?.response?.data?.error || error.message)
     }
   }
 
+  // Effect to check status on component mount (once user is authenticated)
   useEffect(() => {
     if (isLoaded && user) {
         fetchSellerStatus()
@@ -127,6 +158,8 @@ export default function CreateStore() {
         setLoading(false)
     }
   }, [isLoaded, user])
+
+  // ================= RENDER LOGIC =================
 
   if (!isLoaded || loading) return <Loading />
 
@@ -142,7 +175,12 @@ export default function CreateStore() {
 
   return (
     <>
+      {/* CONDITIONAL RENDERING: 
+          If !alreadySubmitted -> Show Form 
+          If alreadySubmitted  -> Show Status Card 
+      */}
       {!alreadySubmitted ? (
+        // ================= VIEW 1: APPLICATION FORM =================
         <div className="relative min-h-screen bg-gradient-to-br from-indigo-50 via-white to-purple-50 py-16 px-4 sm:px-6 lg:px-8">
           <div className="max-w-4xl mx-auto bg-white/80 backdrop-blur-xl shadow-2xl rounded-3xl p-8 sm:p-12 border border-slate-200">
             
@@ -155,7 +193,7 @@ export default function CreateStore() {
               </p>
             </div>
 
-            {/* Logo Upload */}
+            {/* Image Upload Area */}
             <div className="flex flex-col items-center gap-3 mb-8">
               <label className="cursor-pointer flex flex-col items-center">
                 <div className="border-2 border-dashed border-slate-300 hover:border-indigo-400 rounded-2xl p-4 bg-white w-40 h-40 flex flex-col items-center justify-center overflow-hidden relative">
@@ -189,7 +227,7 @@ export default function CreateStore() {
 
             <form onSubmit={(e) => toast.promise(onSubmitHandler(e), { loading: "Submitting..." })} className="space-y-6">
               
-              {/* Basic Details */}
+              {/* Section 1: Basic Store Details */}
               <div className="bg-slate-50 p-6 rounded-2xl border border-slate-100">
                 <h3 className="text-lg font-bold text-slate-700 mb-4">Store Details</h3>
                 <div className="grid grid-cols-1 sm:grid-cols-2 gap-6">
@@ -208,7 +246,7 @@ export default function CreateStore() {
                 </div>
               </div>
 
-              {/* Contact Info */}
+              {/* Section 2: Contact Info */}
               <div className="bg-slate-50 p-6 rounded-2xl border border-slate-100">
                 <h3 className="text-lg font-bold text-slate-700 mb-4">Contact Information</h3>
                 <div className="grid grid-cols-1 sm:grid-cols-2 gap-6">
@@ -227,7 +265,7 @@ export default function CreateStore() {
                 </div>
               </div>
 
-              {/* Legal & Banking */}
+              {/* Section 3: Legal & Banking */}
               <div className="bg-slate-50 p-6 rounded-2xl border border-slate-100">
                 <h3 className="text-lg font-bold text-slate-700 mb-4">Legal & Banking</h3>
                 <div className="grid grid-cols-1 sm:grid-cols-2 gap-6">
@@ -259,9 +297,13 @@ export default function CreateStore() {
           </div>
         </div>
       ) : (
+        // ================= VIEW 2: STATUS CARD =================
+        // Displays when user has already submitted an application
         <div className="min-h-[80vh] flex flex-col items-center justify-center text-center px-6 bg-gradient-to-br from-indigo-50 to-purple-100">
           <div className="bg-white p-8 rounded-3xl shadow-xl max-w-lg w-full">
             <h2 className="text-2xl font-bold text-slate-800 mb-4">Application Status</h2>
+            
+            {/* Dynamic Styling based on Status (Red for Rejected, Indigo for others) */}
             <div className={`text-lg font-medium uppercase tracking-wider mb-2 ${
                 status === 'rejected' ? 'text-red-600' : 'text-indigo-600'
             }`}>
@@ -269,7 +311,9 @@ export default function CreateStore() {
             </div>
             <p className="text-slate-500 mb-6">{message}</p>
 
-            {/* ✅ SHOW REJECTION REASON & RESUBMIT BUTTON */}
+            {/* REJECTION LOGIC:
+                If status is rejected, we show the admin's notes and a button to re-open the form. 
+            */}
             {status === 'rejected' && (
                 <div className="space-y-6 border-t pt-6 mt-4">
                     {rejectionReason && (
