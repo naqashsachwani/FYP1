@@ -1,31 +1,41 @@
-import prisma from "@/lib/prisma";
-import { NextResponse } from "next/server";
+import prisma from "@/lib/prisma";           // Prisma client to access your database
+import { NextResponse } from "next/server";  // Next.js helper for responses
 
 export async function GET(request) {
     try {
+        // 1Fetch all products from the database
         let products = await prisma.product.findMany({
-            // 🔴 REMOVED: where: {inStock: true}, 
-            // We want all products, stock status will be handled in UI
-            
+            // Removed `where: { inStock: true }` so all products are fetched.
+            // Stock availability will be handled in the UI instead.
+
             include: {
+                // Include related ratings with only necessary fields
                 ratings: {  
                     select: {
-                        createdAt: true, 
-                        rating: true, 
-                        review: true,
-                        user: {select: {name: true, image: true}}
+                        createdAt: true,      // When the rating was made
+                        rating: true,         // Rating value (1-5)
+                        review: true,         // Optional review text
+                        user: { select: { name: true, image: true } } // Only user name & image
                     }
                 },
+                // Include the product's store information
                 store: true,
             },
-            orderBy: {createdAt: 'desc'}
+            // Order products so newest ones appear first
+            orderBy: { createdAt: 'desc' }
         })
 
-        // Keep this: Remove products if the STORE itself is inactive
+        // Filter out products whose STORE is inactive
+        // Even if the product is in stock, we don't show it if its store is inactive
         products = products.filter(product => product.store.isActive)
-        return NextResponse.json({products})
+
+        // Return the filtered products
+        return NextResponse.json({ products })
     } catch (error) {
         console.error(error);
-        return NextResponse.json({ error: "An internal server error occurred"}, {status: 500});
+        return NextResponse.json(
+            { error: "An internal server error occurred" },
+            { status: 500 }
+        );
     }
 }
