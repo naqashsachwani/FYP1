@@ -1,4 +1,6 @@
 'use client'
+
+/* ================= Imports ================= */
 import { assets } from '@/assets/assets'
 import { ArrowRightIcon } from 'lucide-react'
 import Image from 'next/image'
@@ -6,9 +8,13 @@ import { useRouter } from 'next/navigation'
 import React from 'react'
 
 const Hero = () => {
+  // Currency symbol from env (fallback to Rs)
   const currency = process.env.NEXT_PUBLIC_CURRENCY_SYMBOL || 'Rs'
+
+  // Next.js router for navigation
   const router = useRouter()
 
+  // Navigate user to shop page
   const goToShop = () => {
     router.push('/shop')
   }
@@ -17,9 +23,10 @@ const Hero = () => {
     <div className='mx-4 sm:mx-6'>
       <div className='flex flex-col xl:flex-row gap-6 lg:gap-8 max-w-7xl mx-auto my-8 lg:my-12'>
 
-        {/* Main Banner */}
+        {/* ================= MAIN HERO BANNER ================= */}
         <div className='relative flex-1 rounded-3xl overflow-hidden group min-h-[360px] xl:min-h-[420px] shadow-lg'>
-          {/* Full-cover hero image */}
+          
+          {/* Background Image (Full Cover) */}
           <div className='absolute inset-0'>
             <Image
               src={assets.hero_model_img}
@@ -29,24 +36,30 @@ const Hero = () => {
               className='object-cover object-center transform transition-transform duration-700 group-hover:scale-105'
               priority
             />
+
+            {/* Dark gradient overlay for text readability */}
             <div className='absolute inset-0 bg-gradient-to-r from-black/60 via-black/30 to-transparent pointer-events-none' />
           </div>
 
-          {/* Content */}
+          {/* Hero Content */}
           <div className='relative z-20 p-6 sm:p-12 lg:p-16 flex items-start h-full'>
             <div className='max-w-lg w-full'> 
               
-              {/* --- FIXED BADGE (Mobile Optimized) --- */}
+              {/* ================= NEWS BADGE ================= */}
               <div className='inline-flex items-center gap-2 bg-white rounded-full p-1 pr-3 sm:gap-3 sm:pr-4 shadow-lg mb-6 animate-fade-in-up border border-white/20 backdrop-blur-sm max-w-full'>
+                
+                {/* Badge label */}
                 <span className='bg-green-600 text-white px-2 py-0.5 rounded-full text-[10px] sm:text-xs font-bold uppercase tracking-wide shrink-0'>
                   News
                 </span>
+
+                {/* Offer text */}
                 <span className='text-[11px] sm:text-sm font-medium text-slate-800 truncate'>
                   Free Shipping on Orders Above {currency} 5000!
                 </span>
               </div>
-              {/* -------------------------------------- */}
 
+              {/* ================= HERO HEADING ================= */}
               <h2 className='text-3xl sm:text-5xl lg:text-6xl font-bold text-white leading-tight drop-shadow-lg'>
                 Saving Goals for<br />
                 <span className='bg-gradient-to-r from-white to-slate-200 bg-clip-text text-transparent'>
@@ -54,15 +67,16 @@ const Hero = () => {
                 </span>
               </h2>
 
+              {/* Subtitle */}
               <p className='text-white/90 text-lg sm:text-xl mt-4 font-medium drop-shadow-md'>
                 Exclusive offers only at DreamSaver
               </p>
 
-              {/* SHOP NOW Button */}
+              {/* ================= CTA BUTTON ================= */}
               <div className='mt-8 lg:mt-10'>
                 <button
                   onClick={goToShop}
-                  className='inline-flex items-center justify-center bg-white text-slate-900 text-base font-bold py-4 px-10 rounded-xl shadow-2xl hover:bg-slate-100 hover:shadow-2xl transition-all duration-200 transform hover:-translate-y-1 active:translate-y-0 hover:scale-105'
+                  className='inline-flex items-center justify-center bg-white text-slate-900 text-base font-bold py-4 px-10 rounded-xl shadow-2xl hover:bg-slate-100 transition-all duration-200 transform hover:-translate-y-1 hover:scale-105 active:translate-y-0'
                 >
                   SHOP NOW
                   <ArrowRightIcon className='ml-2' size={20} />
@@ -71,13 +85,14 @@ const Hero = () => {
             </div>
           </div>
 
+          {/* Decorative blurred accent */}
           <div className='absolute left-6 bottom-6 w-40 h-40 rounded-3xl bg-white/20 blur-[18px] pointer-events-none'></div>
         </div>
 
-        {/* Side Banners */}
+        {/* ================= SIDE BANNERS ================= */}
         <div className='flex flex-col sm:flex-row xl:flex-col gap-4 lg:gap-6 w-full xl:w-96'>
 
-          {/* Side Banner 1 */}
+          {/* -------- Side Banner 1 -------- */}
           <div className='relative flex-1 rounded-3xl overflow-hidden group min-h-[180px] sm:min-h-[200px] shadow-lg'>
             <Image
               src={assets.hero_product_img1}
@@ -86,20 +101,29 @@ const Hero = () => {
               sizes="(min-width: 1280px) 24vw, (min-width: 768px) 32vw, 100vw"
               className='object-cover object-center transform transition-transform duration-500 group-hover:scale-110'
             />
+
+            {/* Gradient overlay */}
             <div className='absolute inset-0 bg-gradient-to-br from-black/50 via-black/30 to-transparent pointer-events-none' />
+
+            {/* Content */}
             <div className='relative z-20 p-6 lg:p-8 flex items-center justify-between h-full'>
               <div className='text-white'>
-                <p className='text-2xl lg:text-3xl font-bold leading-tight drop-shadow-lg'>DreamSaver Picks</p>
+                <p className='text-2xl lg:text-3xl font-bold drop-shadow-lg'>
+                  DreamSaver Picks
+                </p>
+
+                {/* Link-like CTA */}
                 <p
                   onClick={goToShop}
-                  className='mt-3 text-white/90 font-semibold inline-flex items-center gap-2 group-hover:text-white transition-colors cursor-pointer'
+                  className='mt-3 text-white/90 font-semibold inline-flex items-center gap-2 cursor-pointer group-hover:text-white'
                 >
                   View more
                   <ArrowRightIcon className='group-hover:translate-x-1.5 transition-transform' size={18} />
                 </p>
               </div>
 
-              <div className='w-24 lg:w-28 h-24 lg:h-28 rounded-2xl overflow-hidden bg-white/20 backdrop-blur-sm flex-shrink-0 border border-white/30'>
+              {/* Thumbnail image */}
+              <div className='w-24 lg:w-28 h-24 lg:h-28 rounded-2xl overflow-hidden bg-white/20 backdrop-blur-sm border border-white/30'>
                 <Image
                   src={assets.hero_product_img1}
                   alt='product thumbnail'
@@ -111,7 +135,7 @@ const Hero = () => {
             </div>
           </div>
 
-          {/* Side Banner 2 */}
+          {/* -------- Side Banner 2 -------- */}
           <div className='relative flex-1 rounded-3xl overflow-hidden group min-h-[180px] sm:min-h-[200px] shadow-lg'>
             <Image
               src={assets.hero_product_img2}
@@ -120,20 +144,25 @@ const Hero = () => {
               sizes="(min-width: 1280px) 24vw, (min-width: 768px) 32vw, 100vw"
               className='object-cover object-center transform transition-transform duration-500 group-hover:scale-110'
             />
+
             <div className='absolute inset-0 bg-gradient-to-br from-black/50 via-black/30 to-transparent pointer-events-none' />
+
             <div className='relative z-20 p-6 lg:p-8 flex items-center justify-between h-full'>
               <div className='text-white'>
-                <p className='text-2xl lg:text-3xl font-bold leading-tight drop-shadow-lg'>20% Off Deals</p>
+                <p className='text-2xl lg:text-3xl font-bold drop-shadow-lg'>
+                  20% Off Deals
+                </p>
+
                 <p
                   onClick={goToShop}
-                  className='mt-3 text-white/90 font-semibold inline-flex items-center gap-2 group-hover:text-white transition-colors cursor-pointer'
+                  className='mt-3 text-white/90 font-semibold inline-flex items-center gap-2 cursor-pointer group-hover:text-white'
                 >
                   View more
                   <ArrowRightIcon className='group-hover:translate-x-1.5 transition-transform' size={18} />
                 </p>
               </div>
 
-              <div className='w-24 lg:w-28 h-24 lg:h-28 rounded-2xl overflow-hidden bg-white/20 backdrop-blur-sm flex-shrink-0 border border-white/30'>
+              <div className='w-24 lg:w-28 h-24 lg:h-28 rounded-2xl overflow-hidden bg-white/20 backdrop-blur-sm border border-white/30'>
                 <Image
                   src={assets.hero_product_img2}
                   alt='deal thumbnail'
@@ -145,6 +174,7 @@ const Hero = () => {
             </div>
           </div>
         </div>
+        {/* ================= END SIDE BANNERS ================= */}
 
       </div>
     </div>
