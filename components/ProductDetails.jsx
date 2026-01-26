@@ -7,13 +7,15 @@ import Image from "next/image";
 
 const ProductDetails = ({ product }) => {
   const productId = String(product.id);
-  const currency = process.env.NEXT_PUBLIC_CURRENCY_SYMBOL || '$';
+  const currency = process.env.NEXT_PUBLIC_CURRENCY_SYMBOL || 'Rs ';
   const router = useRouter();
 
   const [mainImage, setMainImage] = useState(product.images?.[0] || "");
 
   const setGoalHandler = () => {
-    router.push(`/set-goal?productId=${encodeURIComponent(productId)}`);
+    if (product.inStock) {
+      router.push(`/set-goal?productId=${encodeURIComponent(productId)}`);
+    }
   }
 
   // Safely calculate average rating
@@ -24,7 +26,8 @@ const ProductDetails = ({ product }) => {
   return (
     <div className="flex max-lg:flex-col gap-12">
       {/* IMAGE SECTION */}
-      <div className="flex max-sm:flex-col-reverse gap-3">
+      {/* We reduce opacity if the product is out of stock to give a visual cue */}
+      <div className={`flex max-sm:flex-col-reverse gap-3 ${!product.inStock ? 'opacity-75' : ''}`}>
         <div className="flex sm:flex-col gap-3">
           {product.images?.map((image, index) => (
             <div
@@ -36,7 +39,7 @@ const ProductDetails = ({ product }) => {
             </div>
           ))}
         </div>
-        <div className="flex justify-center items-center h-100 sm:size-113 bg-slate-100 rounded-lg shadow-lg">
+        <div className="flex justify-center items-center h-100 sm:size-113 bg-slate-100 rounded-lg shadow-lg relative">
           {mainImage ? (
             <Image src={mainImage} alt="" width={250} height={250} className="transition-transform hover:scale-105" />
           ) : (
@@ -47,7 +50,15 @@ const ProductDetails = ({ product }) => {
 
       {/* DETAILS SECTION */}
       <div className="flex-1">
-        <h1 className="text-3xl font-semibold text-slate-800">{product.name}</h1>
+        <h1 className="text-3xl font-semibold text-slate-800 flex items-center">
+          {product.name}
+          {/* Visual Badge for Out of Stock */}
+          {!product.inStock && (
+            <span className="ml-4 text-sm font-bold text-red-600 bg-red-100 px-3 py-1 rounded-full border border-red-200">
+              Out of Stock
+            </span>
+          )}
+        </h1>
 
         <div className='flex items-center mt-2'>
           {Array(5).fill('').map((_, index) => (
@@ -57,8 +68,8 @@ const ProductDetails = ({ product }) => {
         </div>
 
         <div className="flex items-start my-6 gap-3 text-2xl font-semibold text-slate-800">
-          <p>{currency}{product.price}</p>
-          <p className="text-xl text-slate-500 line-through">{currency}{product.mrp}</p>
+          <p>{currency}{product.price.toLocaleString()}</p>
+          <p className="text-xl text-slate-500 line-through">{currency}{product.mrp.toLocaleString()}</p>
         </div>
 
         <div className="flex items-center gap-2 text-slate-500">
@@ -69,16 +80,22 @@ const ProductDetails = ({ product }) => {
         <div className="flex items-end gap-5 mt-10">
           <button
             onClick={setGoalHandler}
-            className="px-10 py-3 text-sm font-medium rounded transition-transform transform active:scale-95 bg-green-500 text-white hover:bg-green-600 shadow-md"
+            disabled={!product.inStock} // ✅ Disable if OOS
+            className={`px-10 py-3 text-sm font-medium rounded transition-transform transform shadow-md
+              ${!product.inStock
+                ? "bg-gray-400 cursor-not-allowed text-white"
+                : "active:scale-95 bg-green-500 text-white hover:bg-green-600"
+              }`}
           >
-            Set Goal
+            {/* ✅ Dynamic Text */}
+            {!product.inStock ? "Currently Unavailable" : "Set Goal"}
           </button>
         </div>
 
         <hr className="border-gray-300 my-5" />
 
         <div className="flex flex-col gap-4 text-slate-500">
-          <p className="flex gap-3"><EarthIcon className="text-slate-400" /> Free shipping above Rs 5000</p>
+          <p className="flex gap-3"><EarthIcon className="text-slate-400" /> Free shipping above {currency}5,000</p>
           <p className="flex gap-3"><CreditCardIcon className="text-slate-400" /> 100% Secured Payment</p>
           <p className="flex gap-3"><UserIcon className="text-slate-400" /> Trusted by top brands</p>
         </div>

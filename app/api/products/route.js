@@ -4,9 +4,11 @@ import { NextResponse } from "next/server";
 export async function GET(request) {
     try {
         let products = await prisma.product.findMany({
-            where: {inStock: true},
+            // 🔴 REMOVED: where: {inStock: true}, 
+            // We want all products, stock status will be handled in UI
+            
             include: {
-                ratings: {  // Changed from 'rating' to 'ratings'
+                ratings: {  
                     select: {
                         createdAt: true, 
                         rating: true, 
@@ -19,7 +21,7 @@ export async function GET(request) {
             orderBy: {createdAt: 'desc'}
         })
 
-        // Remove products with store isActive false
+        // Keep this: Remove products if the STORE itself is inactive
         products = products.filter(product => product.store.isActive)
         return NextResponse.json({products})
     } catch (error) {
