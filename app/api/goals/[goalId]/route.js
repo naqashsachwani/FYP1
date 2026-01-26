@@ -1,23 +1,28 @@
-import prisma from "@/lib/prisma";
-import { getAuth } from "@clerk/nextjs/server";
-import { NextResponse } from "next/server";
-import crypto from "crypto";
+import prisma from "@/lib/prisma";                       // Prisma client for DB
+import { getAuth } from "@clerk/nextjs/server";         // Clerk server-side auth
+import { NextResponse } from "next/server";             // Next.js server response
+import crypto from "crypto";                             // For generating unique receipt numbers
 
-// Helper to convert Prisma Decimals to Numbers for JSON
-const normalize = (obj) => JSON.parse(JSON.stringify(obj, (key, value) => 
-  (typeof value === 'object' && value !== null && value.type === 'Decimal') 
-  ? Number(value) 
-  : value
-));
+// -------------------- Helper: Normalize Prisma Decimals --------------------
+// Converts Prisma Decimal objects to Numbers for safe JSON serialization
+const normalize = (obj) => JSON.parse(
+  JSON.stringify(obj, (key, value) => 
+    (typeof value === 'object' && value !== null && value.type === 'Decimal') 
+      ? Number(value) 
+      : value
+  )
+);
 
 /* ===================== GET GOAL DETAILS ===================== */
 export async function GET(req, { params }) {
   const { goalId } = await params; 
   const { userId } = getAuth(req);
 
+  // Deny if not authenticated
   if (!userId) return NextResponse.json({ error: "Unauthenticated" }, { status: 401 });
   
   try {
+    // Fetch goal including its deposits and related product
     const goal = await prisma.goal.findUnique({
       where: { id: goalId },
       include: { 
@@ -28,6 +33,7 @@ export async function GET(req, { params }) {
 
     if (!goal) return NextResponse.json({ error: "Goal not found" }, { status: 404 });
 
+    // Calculate progress as percentage
     const saved = Number(goal.saved);
     const target = Number(goal.targetAmount);
     const progressPercent = target > 0 ? (saved / target) * 100 : 0;
@@ -51,8 +57,10 @@ export async function POST(req, { params }) {
     const body = await req.json();
     const amount = Number(body.amount);
 
+    // Validate amount
     if (!amount || amount <= 0) return NextResponse.json({ error: "Invalid amount" }, { status: 400 });
 
+    // Fetch goal and its deposits
     const goal = await prisma.goal.findUnique({
       where: { id: goalId },
       include: { deposits: true },
@@ -60,11 +68,12 @@ export async function POST(req, { params }) {
 
     if (!goal) return NextResponse.json({ error: "Goal not found" }, { status: 404 });
 
+    // Prevent deposits on completed goals
     if (goal.status === "COMPLETED") {
       return NextResponse.json({ error: "Goal already completed." }, { status: 400 });
     }
 
-    // Save deposit
+    // Create new deposit
     const deposit = await prisma.deposit.create({
       data: {
         goalId,
@@ -72,17 +81,18 @@ export async function POST(req, { params }) {
         amount,
         paymentMethod: body.paymentMethod || "STRIPE",
         status: "COMPLETED",
-        receiptNumber: crypto.randomUUID(),
+        receiptNumber: crypto.randomUUID(), // Unique receipt
       },
     });
 
-    // Recalculate total
+    // Recalculate total saved
     const totalSaved = await prisma.deposit.aggregate({
       _sum: { amount: true },
       where: { goalId },
     });
     const totalSavedAmount = totalSaved._sum.amount || 0;
 
+    // Update goal status if completed
     const newStatus = totalSavedAmount >= Number(goal.targetAmount) ? "COMPLETED" : goal.status;
 
     const updatedGoal = await prisma.goal.update({
@@ -95,6 +105,7 @@ export async function POST(req, { params }) {
       include: { deposits: true, product: true },
     });
 
+    // Send completion notification if goal finished
     if (newStatus === "COMPLETED") {
       await prisma.notification.create({
         data: {
@@ -127,32 +138,27 @@ export async function DELETE(req, { params }) {
   if (!userId) return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
 
   try {
-    const goal = await prisma.goal.findUnique({
-      where: { id: goalId },
-    });
+    const goal = await prisma.goal.findUnique({ where: { id: goalId } });
 
     if (!goal) return NextResponse.json({ error: "Goal not found" }, { status: 404 });
 
-    // If goal is a Draft (SAVED) OR an Active Goal with 0 saved, completely remove it.
+    // Delete goal completely if it is draft or has no funds
     if (goal.status === "SAVED" || Number(goal.saved) === 0) {
-       await prisma.$transaction([
-        prisma.priceLock.deleteMany({ where: { goalId: goalId } }),
-        prisma.deposit.deleteMany({ where: { goalId: goalId } }), // Safety cleanup
-        prisma.goal.delete({ where: { id: goalId } })
+      await prisma.$transaction([
+        prisma.priceLock.deleteMany({ where: { goalId } }),
+        prisma.deposit.deleteMany({ where: { goalId } }),
+        prisma.goal.delete({ where: { id: goalId } }),
       ]);
       return NextResponse.json({ message: "Goal deleted successfully" });
-    }
-
-
-    // If the goal has actual funds, we keep the record but mark it REFUNDED.
+    } 
+    // If goal has funds, mark it as REFUNDED instead
     else {
       await prisma.goal.update({
         where: { id: goalId },
-        data: { status: "REFUNDED" } 
+        data: { status: "REFUNDED" },
       });
       return NextResponse.json({ message: "Goal cancelled. Refund pending." });
     }
-
   } catch (error) {
     console.error("Delete Goal Error:", error);
     return NextResponse.json({ error: error.message }, { status: 500 });

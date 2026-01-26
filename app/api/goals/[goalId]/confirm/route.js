@@ -1,30 +1,31 @@
-import prisma from "@/lib/prisma";
-import { getAuth } from "@clerk/nextjs/server";
-import { NextResponse } from "next/server";
-import crypto from "crypto";
+import prisma from "@/lib/prisma";                     // Prisma client for DB operations
+import { getAuth } from "@clerk/nextjs/server";       // Server-side authentication
+import { NextResponse } from "next/server";           // Response helper
+import crypto from "crypto";                           // Generate unique receipt IDs
 
 export async function POST(req, { params }) {
-  const { goalId } = await params;
-  const { userId } = getAuth(req);
+  const { goalId } = await params;                     // Get goalId from route params
+  const { userId } = getAuth(req);                    // Get authenticated user
 
+  // Authentication check
   if (!userId) {
     return NextResponse.json({ error: "Unauthenticated" }, { status: 401 });
   }
 
-  const { amount } = await req.json();
+  const { amount } = await req.json();                // Extract deposit amount
+  // Validate amount
   if (!amount || amount <= 0) {
     return NextResponse.json({ error: "Invalid amount" }, { status: 400 });
   }
 
-  // 1. Fetch goal to validate
-  const goal = await prisma.goal.findUnique({
-    where: { id: goalId },
-  });
+  // 1. Fetch the goal to validate
+  const goal = await prisma.goal.findUnique({ where: { id: goalId } });
 
   if (!goal) {
     return NextResponse.json({ error: "Goal not found" }, { status: 404 });
   }
 
+  // Prevent deposits on completed goals
   if (goal.status === "COMPLETED") {
     return NextResponse.json(
       { error: "Goal already completed. Deposits are locked." },
@@ -33,10 +34,10 @@ export async function POST(req, { params }) {
   }
 
   try {
-    // 2. Perform all DB writes in a Single Transaction
+    // 2. Perform all writes atomically using a Prisma transaction
     const result = await prisma.$transaction(async (tx) => {
       
-      // A. Create DEPOSIT Record
+      // A. Create deposit record
       const newDeposit = await tx.deposit.create({
         data: {
           goalId,
@@ -44,11 +45,11 @@ export async function POST(req, { params }) {
           amount,
           paymentMethod: "STRIPE",
           status: "COMPLETED",
-          receiptNumber: crypto.randomUUID(),
+          receiptNumber: crypto.randomUUID(),  // Unique receipt
         },
       });
 
-      // B. Create TRANSACTION Record
+      // B. Record transaction in transactions table for bookkeeping
       await tx.transaction.create({
         data: {
           userId,
@@ -56,12 +57,12 @@ export async function POST(req, { params }) {
           amount,
           currency: "PKR",
           provider: "STRIPE",
-          status: "COMPLETED", 
+          status: "COMPLETED",
           providerPaymentId: newDeposit.receiptNumber,
           metadata: {
             type: "GOAL_DEPOSIT",
-            source: "STRIPE_CHECKOUT"
-          }
+            source: "STRIPE_CHECKOUT",
+          },
         },
       });
 
@@ -72,29 +73,27 @@ export async function POST(req, { params }) {
       });
       const totalSavedAmount = totalSaved._sum.amount || 0;
 
-      // D. Check for Completion
-      const newStatus = totalSavedAmount >= Number(goal.targetAmount) ? "COMPLETED" : "ACTIVE";
+      // D. Determine new goal status
+      const newStatus =
+        totalSavedAmount >= Number(goal.targetAmount) ? "COMPLETED" : "ACTIVE";
 
-      // ✅ FIX: PREPARE UPDATE DATA
-      // We only want to update endDate if the goal is actually completed.
-      // If it's still active, we pass 'undefined' so Prisma ignores the field (keeping the old date).
+      // Prepare update object safely
       const updateData = {
         saved: totalSavedAmount,
         status: newStatus,
       };
-
       if (newStatus === "COMPLETED") {
-          updateData.endDate = new Date();
+        updateData.endDate = new Date(); // Only set endDate if goal completes
       }
 
-      // E. Update Goal Status
+      // E. Update goal record
       const updatedGoal = await tx.goal.update({
         where: { id: goalId },
-        data: updateData, // ✅ Use the safe object
-        include: { deposits: true, product: true },
+        data: updateData,
+        include: { deposits: true, product: true }, // Include deposits & product for front-end
       });
 
-      // F. Send Notification if Complete
+      // F. Create completion notification if goal finished
       if (newStatus === "COMPLETED") {
         await tx.notification.create({
           data: {
@@ -110,14 +109,17 @@ export async function POST(req, { params }) {
       return updatedGoal;
     });
 
-    // 3. Helper to normalize Decimal types for JSON response
-    const normalize = (obj) => JSON.parse(JSON.stringify(obj, (key, value) => 
-      (typeof value === 'object' && value !== null && value.type === 'Decimal') 
-      ? Number(value) 
-      : value
-    ));
+    // 3. Helper to normalize Prisma Decimal types for JSON
+    const normalize = (obj) =>
+      JSON.parse(
+        JSON.stringify(obj, (key, value) =>
+          typeof value === "object" && value !== null && value.type === "Decimal"
+            ? Number(value)
+            : value
+        )
+      );
 
-    // 4. Prepare Response Data
+    // 4. Calculate progress %
     const normalizedGoal = {
       ...normalize(result),
       progressPercent:
@@ -126,12 +128,12 @@ export async function POST(req, { params }) {
           : 0,
     };
 
+    // 5. Return success response
     return NextResponse.json({
       success: true,
       goalCompleted: result.status === "COMPLETED",
       goal: normalizedGoal,
     });
-
   } catch (error) {
     console.error("Confirm Error:", error);
     return NextResponse.json({ error: "Failed to process deposit" }, { status: 500 });

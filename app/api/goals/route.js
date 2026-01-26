@@ -1,31 +1,36 @@
-import prisma from "@/lib/prisma";
-import { getAuth } from "@clerk/nextjs/server";
-import { NextResponse } from "next/server";
+import prisma from "@/lib/prisma"; // Prisma client for DB
+import { getAuth } from "@clerk/nextjs/server"; // Clerk auth for server
+import { NextResponse } from "next/server"; // Next.js response helper
 
-// Helper to convert Prisma Decimals to Numbers for JSON
-const normalize = (obj) => JSON.parse(JSON.stringify(obj, (key, value) => 
-  (typeof value === 'object' && value !== null && value.type === 'Decimal') 
-  ? Number(value) 
-  : value
-));
+// ---------------- Helper: Normalize Decimal to Number ----------------
+// Prisma stores decimals as objects; this converts them to normal numbers for JSON
+const normalize = (obj) => JSON.parse(
+  JSON.stringify(obj, (key, value) => 
+    (typeof value === 'object' && value !== null && value.type === 'Decimal') 
+      ? Number(value) 
+      : value
+  )
+);
 
 /* ================= GET ALL GOALS ================= */
 export async function GET(request) {
   try {
     const { userId } = getAuth(request);
-    if (!userId) return NextResponse.json({ error: "Unauthenticated" }, { status: 401 });
+    if (!userId) 
+      return NextResponse.json({ error: "Unauthenticated" }, { status: 401 });
 
+    // Fetch all goals of this user with related data
     const goals = await prisma.goal.findMany({
       where: { userId },
       include: { 
-        product: true, 
-        deposits: { orderBy: { createdAt: "desc" } },
-        // ✅ FIX 1: Include PriceLock so you can see the linked data
-        priceLock: true 
+        product: true, // Product info
+        deposits: { orderBy: { createdAt: "desc" } }, // Deposits history
+        priceLock: true // Linked PriceLock data
       },
-      orderBy: { createdAt: "desc" },
+      orderBy: { createdAt: "desc" }, // Latest first
     });
 
+    // Map goals to include progress calculations
     const goalsWithProgress = goals.map(goal => ({
       ...goal,
       saved: Number(goal.saved),
@@ -47,17 +52,19 @@ export async function GET(request) {
 export async function POST(request) {
   try {
     const { userId } = getAuth(request);
-    if (!userId) return NextResponse.json({ error: "Unauthenticated" }, { status: 401 });
+    if (!userId) 
+      return NextResponse.json({ error: "Unauthenticated" }, { status: 401 });
 
     const body = await request.json();
     const { productId, targetAmount, targetDate, status = "ACTIVE" } = body;
 
+    // Input validation
     if (!productId) return NextResponse.json({ error: "productId is required" }, { status: 400 });
-
     const amountNum = Number(targetAmount);
-    if (!amountNum || amountNum <= 0) return NextResponse.json({ error: "targetAmount must be positive" }, { status: 400 });
+    if (!amountNum || amountNum <= 0) 
+      return NextResponse.json({ error: "targetAmount must be positive" }, { status: 400 });
 
-    // 1️⃣ CHECK FOR EXISTING *LIVE* GOAL
+    // ---------------- Check if a live goal exists ----------------
     const existingGoal = await prisma.goal.findFirst({
       where: { 
         userId, 
@@ -66,11 +73,10 @@ export async function POST(request) {
       } 
     });
 
-    // 2️⃣ IF LIVE GOAL EXISTS -> UPDATE IT
+    // ---------------- Update existing goal ----------------
     if (existingGoal) {
-      // ✅ FIX 2: Use Transaction to update Goal AND PriceLock together
       const updatedData = await prisma.$transaction(async (tx) => {
-        // A. Update Goal
+        // Update Goal
         const goalUpdate = await tx.goal.update({
           where: { id: existingGoal.id },
           data: { 
@@ -78,11 +84,10 @@ export async function POST(request) {
             endDate: targetDate ? new Date(targetDate) : existingGoal.endDate,
             status: status 
           },
-          include: { priceLock: true } // Return the price lock
+          include: { priceLock: true } // Return PriceLock for further update
         });
 
-        // B. Update PriceLock Expiry to match Goal EndDate
-        // Only if a PriceLock exists for this goal
+        // Update linked PriceLock expiry to match goal endDate
         if (goalUpdate.priceLock) {
            await tx.priceLock.update({
              where: { id: goalUpdate.priceLock.id },
@@ -98,7 +103,7 @@ export async function POST(request) {
       return NextResponse.json({ message: "Goal updated", goal: normalize(updatedData) });
     }
 
-    // 3️⃣ IF NO LIVE GOAL EXISTS -> CREATE NEW FRESH GOAL
+    // ---------------- Create new goal ----------------
     const product = await prisma.product.findUnique({ where: { id: productId } });
     if (!product) return NextResponse.json({ error: "Product not found" }, { status: 404 });
 
@@ -117,11 +122,11 @@ export async function POST(request) {
         },
       });
 
-      // Create PriceLock linked to Goal
+      // Create linked PriceLock
       await tx.priceLock.create({
         data: {
           productId,
-          goalId: newGoal.id, // <--- This links the Goal data to PriceLock
+          goalId: newGoal.id,
           lockedPrice: product.price,
           originalPrice: product.price,
           lockedBy: userId,
