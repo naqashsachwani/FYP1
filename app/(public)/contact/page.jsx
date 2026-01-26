@@ -20,7 +20,7 @@ const Contact = () => {
             </div>
             <h3 className="text-lg font-bold text-slate-800 mb-2">Email Support</h3>
             <p className="text-slate-500 text-sm mb-1">Our friendly team is here to help.</p>
-            <p className="text-blue-600 font-medium">support@yourstore.com</p>
+            <p className="text-blue-600 font-medium">contact@dreamsaver.com</p>
           </div>
 
           {/* Phone Card */}
@@ -30,7 +30,7 @@ const Contact = () => {
             </div>
             <h3 className="text-lg font-bold text-slate-800 mb-2">Phone</h3>
             <p className="text-slate-500 text-sm mb-1">Mon-Fri from 8am to 5pm.</p>
-            <p className="text-emerald-600 font-medium">+92 300 0000000</p>
+            <p className="text-emerald-600 font-medium">+92 301 4677899</p>
           </div>
 
           {/* Address Card */}
@@ -40,7 +40,7 @@ const Contact = () => {
             </div>
             <h3 className="text-lg font-bold text-slate-800 mb-2">Office</h3>
             <p className="text-slate-500 text-sm mb-1">Come say hello at our office HQ.</p>
-            <p className="text-purple-600 font-medium">123 Street, City, Pakistan</p>
+            <p className="text-purple-600 font-medium">ABC Street, 94102, Karachi, Pakistan</p>
           </div>
 
         </div>
