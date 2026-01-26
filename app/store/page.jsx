@@ -26,43 +26,57 @@ import {
   ResponsiveContainer
 } from 'recharts'
 
+
 export default function Dashboard() {
 
+    // AUTHENTICATION & CONFIG
+    // We use Clerk's hook to get the 'getToken' function.
+    // getToken retrieve the JWT (JSON Web Token) securely. We must pass this 
+    //   token in the Authorization header of our API calls so the backend knows 
+    //   EXACTLY which store data to return."
     const { getToken } = useAuth()
-    const currency = process.env.NEXT_PUBLIC_CURRENCY_SYMBOL || '$'
-    const router = useRouter()
+    const currency = process.env.NEXT_PUBLIC_CURRENCY_SYMBOL || 'Rs'
+    const router = useRouter() 
 
+    // STATE MANAGEMENT
     const [loading, setLoading] = useState(true)
+    
+    // Initializing state with "Safe Defaults" (0 or empty arrays).
+    // This prevents "Cannot read property of undefined" errors in the UI 
+    //   before the API response arrives.
     const [dashboardData, setDashboardData] = useState({
         totalProducts: 0,
         totalEarnings: 0,
         totalGoals: 0,
         ordersDelivered: 0,
         pendingDeliveries: 0,
-        allOrders: [] // Ensure this is initialized
+        allOrders: [] 
     })
     const [chartData, setChartData] = useState([])
 
-    // --- Helper to Process Real Data for Chart ---
+    /**
+     * Loop to ensure continuity. If a day has 0 sales, the chart should 
+     * show a flat line at 0, rather than skipping the day entirely."
+     */
     const processChartData = (orders = []) => {
         const days = 7;
         const data = [];
         const today = new Date();
         
-        // Initialize last 7 days
+        // Loop backwards from 6 days ago to today (0)
         for (let i = 6; i >= 0; i--) {
             const d = new Date();
             d.setDate(today.getDate() - i);
-            const dateStr = d.toLocaleDateString('en-US', { weekday: 'short' }); // e.g., "Mon"
-            const dateKey = d.toISOString().split('T')[0]; // YYYY-MM-DD for matching
+            const dateStr = d.toLocaleDateString('en-US', { weekday: 'short' }); // Label: "Mon", "Tue"
+            const dateKey = d.toISOString().split('T')[0]; 
             
-            // Filter orders for this specific date
+            // Filter: Find orders created on this specific date
             const daysOrders = orders.filter(o => {
                 const orderDate = o.createdAt ? new Date(o.createdAt).toISOString().split('T')[0] : '';
                 return orderDate === dateKey;
             });
 
-            // Sum up the total for that day
+            // Aggregation: Sum totals 
             const dailyRevenue = daysOrders.reduce((acc, curr) => acc + (Number(curr.total) || 0), 0);
             
             data.push({
@@ -73,14 +87,19 @@ export default function Dashboard() {
         return data;
     }
 
+    // API INTEGRATION: fetchDashboardData
+     
     const fetchDashboardData = async () => {
         try {
+            // 1. Get Security Token
             const token = await getToken()
+            
+            // 2. Make Request
             const { data } = await axios.get('/api/store/dashboard', {
                 headers: { Authorization: `Bearer ${token}` }
             })
             
-            // Merging API data with safe defaults
+            // 3. Data Sanitization 
             const safeData = {
                 totalProducts: data.dashboardData.totalProducts || 0,
                 totalEarnings: data.dashboardData.totalEarnings || 0,
@@ -91,6 +110,8 @@ export default function Dashboard() {
             }
 
             setDashboardData(safeData)
+            
+            // 4. Chart Processing immediately after data load
             setChartData(processChartData(safeData.allOrders))
 
         } catch (error) {
@@ -101,20 +122,17 @@ export default function Dashboard() {
         }
     }
 
-    // --- PROFESSIONAL AUDIT REPORT GENERATOR ---
     const GenerateReport = () => {
         const doc = new jsPDF();
         const pageWidth = doc.internal.pageSize.getWidth();
         const pageHeight = doc.internal.pageSize.getHeight();
         const today = new Date();
-        const brandColor = [30, 41, 59]; // Slate 800
+        const brandColor = [30, 41, 59]; // Custom Slate 800 Color
 
-        // --- A. Header Section ---
-        // Brand Banner
+        
         doc.setFillColor(...brandColor);
         doc.rect(0, 0, pageWidth, 40, 'F');
 
-        // Title
         doc.setFontSize(24);
         doc.setTextColor(255, 255, 255);
         doc.setFont("helvetica", "bold");
@@ -124,26 +142,25 @@ export default function Dashboard() {
         doc.setFont("helvetica", "normal");
         doc.text("Store Performance Audit Report", 14, 28);
 
-        // Meta Data (Right Aligned)
+        // Dynamic Meta Data
         doc.setFontSize(10);
         doc.text(`Report ID: ${Date.now()}`, pageWidth - 14, 18, { align: 'right' });
         doc.text(`Date: ${today.toLocaleDateString()}`, pageWidth - 14, 24, { align: 'right' });
         doc.text(`Generated By: Store Manager`, pageWidth - 14, 30, { align: 'right' });
 
-        // --- B. Executive Summary (KPI Grid) ---
         let yPos = 55;
         
         doc.setFontSize(14);
         doc.setTextColor(...brandColor);
         doc.text("1. Performance Overview", 14, yPos);
         
-        // KPI Cards Configuration
         const cardWidth = 45;
         const cardHeight = 25;
         const gap = 5;
         const startX = 14;
         yPos += 5;
 
+        // Data for cards
         const stats = [
             { label: "Total Earnings", value: `${currency}${dashboardData.totalEarnings.toLocaleString()}` },
             { label: "Products", value: dashboardData.totalProducts.toString() },
@@ -151,27 +168,26 @@ export default function Dashboard() {
             { label: "Delivered", value: dashboardData.ordersDelivered.toString() }
         ];
 
+        // Loop to draw rectangles and text for each stat
         stats.forEach((stat, index) => {
             const x = startX + (index * (cardWidth + gap));
             
-            // Card Background
+            // Draw Background Rect
             doc.setFillColor(248, 250, 252); // Slate 50
             doc.setDrawColor(226, 232, 240); // Border color
-            doc.roundedRect(x, yPos, cardWidth, cardHeight, 3, 3, 'FD');
+            doc.roundedRect(x, yPos, cardWidth, cardHeight, 3, 3, 'FD'); // FD = Fill & Draw border
 
-            // Label
+            // Draw Labels & Values
             doc.setFontSize(9);
             doc.setTextColor(100, 116, 139);
             doc.text(stat.label, x + 5, yPos + 8);
 
-            // Value
             doc.setFontSize(14);
             doc.setTextColor(...brandColor);
             doc.setFont("helvetica", "bold");
             doc.text(stat.value, x + 5, yPos + 18);
         });
 
-        // --- C. Operational Metrics ---
         yPos += cardHeight + 15;
         doc.setFontSize(14);
         doc.setTextColor(...brandColor);
@@ -180,6 +196,7 @@ export default function Dashboard() {
         yPos += 5;
         doc.setFontSize(10);
         doc.setTextColor(50);
+        // Calculation Logic embedded in report generation
         const healthText = `Pending Deliveries: ${dashboardData.pendingDeliveries} | Delivery Completion Rate: ${dashboardData.ordersDelivered > 0 ? ((dashboardData.ordersDelivered / (dashboardData.ordersDelivered + dashboardData.pendingDeliveries)) * 100).toFixed(1) + '%' : 'N/A'}`;
         doc.text(healthText, 14, yPos + 5);
 
@@ -188,16 +205,16 @@ export default function Dashboard() {
         doc.setFontSize(14);
         doc.setTextColor(...brandColor);
         doc.setFont("helvetica", "bold");
-        // ✅ RENAMED SECTION
         doc.text("3. Daily Revenue Breakdown (Last 7 Days)", 14, yPos);
 
-        // Use chartData for a daily breakdown table if available, otherwise dummy data for structure
+        // Map chart data to Table Rows format
         const auditRows = chartData.length > 0 ? chartData.map(day => [
             day.name,
             `${currency}${day.revenue.toLocaleString()}`,
             day.revenue > 0 ? 'Active' : 'No Sales'
         ]) : [['-', '-', '-']];
 
+        // Use autoTable library to render the grid
         autoTable(doc, {
             startY: yPos + 5,
             head: [['Day', 'Revenue', 'Status']],
@@ -221,8 +238,8 @@ export default function Dashboard() {
                 0: { fontStyle: 'bold' },
                 1: { halign: 'right' }
             },
+            // Footer hook: Adds page numbers automatically
             didDrawPage: function (data) {
-                // Footer on every page
                 doc.setFontSize(8);
                 doc.setTextColor(150);
                 const footerText = `DreamSaver Store Audit Report - Page ${doc.internal.getNumberOfPages()}`;
@@ -230,15 +247,18 @@ export default function Dashboard() {
             }
         });
 
+        // Trigger Download in Browser
         doc.save(`DreamSaver_Store_Report_${today.toISOString().split('T')[0]}.pdf`);
-        // ✅ TOAST REMOVED
     }
 
+    // LIFECYCLE: Run once on component mount
     useEffect(() => {
         fetchDashboardData()
     }, [])
 
-    // Configuration for the stats cards
+  
+    // Storing card data in an array allows us to map() over it in JSX, 
+    // keeping the return statement clean and readable.
     const dashboardCardsData = [
         { 
             title: 'Total Earnings', 
@@ -282,6 +302,8 @@ export default function Dashboard() {
         },
     ]
 
+    // LOADING STATE:
+    // Show a spinner instead of broken UI while data is fetching.
     if (loading) return (
         <div className="min-h-[70vh] flex items-center justify-center bg-slate-50/50">
             <div className="text-center space-y-3">
@@ -317,11 +339,12 @@ export default function Dashboard() {
                     </div>
                 </div>
 
-                {/* Stats Grid */}
+                {/* Stats Grid: Mapping over configuration array */}
                 <div className="grid grid-cols-1 md:grid-cols-2 xl:grid-cols-3 gap-6">
                     {dashboardCardsData.map((card, index) => (
                         <div 
                             key={index} 
+                            // Complex styling for hover effects and gradients
                             className="relative overflow-hidden bg-white rounded-3xl p-6 border border-slate-100 shadow-sm hover:shadow-xl hover:shadow-slate-200/50 transition-all duration-300 hover:-translate-y-1 group"
                         >
                             <div className={`absolute top-0 right-0 w-32 h-32 bg-gradient-to-br ${card.gradient} opacity-5 rounded-bl-full -mr-8 -mt-8 transition-transform group-hover:scale-150 duration-500`}></div>
@@ -342,7 +365,8 @@ export default function Dashboard() {
                     ))}
                 </div>
 
-                {/* --- New Chart Section --- */}
+                {/* --- Chart Section --- */}
+                {/* Visualizing the 7-day revenue trend using Recharts */}
                 <div className="w-full bg-white rounded-3xl p-6 border border-slate-100 shadow-sm">
                     <div className="flex items-center justify-between mb-6">
                         <div>

@@ -62,7 +62,6 @@ export default function AdminStores() {
     // Opens the Edit Modal and pre-fills the form with existing data
     const handleEditClick = (store) => {
         setSelectedStore(store)
-        // We copy the store's current values into the form state so the user can edit them
         setEditFormData({ name: store.name, isActive: store.isActive })
         setIsEditModalOpen(true)
     }
@@ -72,30 +71,26 @@ export default function AdminStores() {
         setIsViewModalOpen(true)
     }
 
-    /**
-     * DELETE STORE (Optimistic UI Pattern)
-     * INTERVIEW NOTE: If the panel asks "How do you handle slow deletions?",
-     * explain this pattern: Snapshot -> Update UI -> API Call -> Rollback if error.
-     */
+ 
     const handleDeleteStore = async (storeId) => {
-        // 1. Safety Check: Prevent accidental clicks
+        // Safety Check: Prevent accidental clicks
         if(!confirm("Are you sure you want to delete this store? This action cannot be undone.")) return;
 
-        // 2. Snapshot: Save current state before modifying it (for rollback)
+        // Snapshot: Save current state before modifying it 
         const previousStores = [...stores];
 
-        // 3. Optimistic Update: Remove from UI immediately so it feels "instant"
+        // Remove from UI immediately so it feels "instant"
         setStores(prev => prev.filter(s => s.id !== storeId));
 
         try {
             const token = await getToken();
-            // API Call: We send the ID as a query param (e.g., ?id=123)
+            // API Call: We send the ID as a query param 
             await axios.delete(`/api/admin/store?id=${storeId}`, {
                 headers: { Authorization: `Bearer ${token}` }
             });
             toast.success("Store deleted successfully");
         } catch (error) {
-            // 4. Rollback: If API failed, put the data back so the user isn't lied to
+            // If API failed, put the data back so the user isn't lied to
             setStores(previousStores); 
             toast.error(error?.response?.data?.error || "Failed to delete store");
         }
@@ -109,23 +104,19 @@ export default function AdminStores() {
     const handleUpdateStore = async (e) => {
         e.preventDefault()
         
-        // 1. Snapshot
         const previousStores = [...stores]
-        
-        // 2. Optimistic Update
+    
         const updatedStore = { ...selectedStore, ...editFormData }
         // Update the specific item in the array while keeping others the same
         setStores(prev => prev.map(s => s.id === selectedStore.id ? updatedStore : s))
         
-        // Close modal immediately for better UX
         setIsEditModalOpen(false)
         toast.success("Store details updated successfully")
 
         try {
             const token = await getToken()
             
-            // 3. Background API Call
-            // CHALLENGE FIX: Send ALL editable data (Name + Status)
+            //Background API Call
             await axios.patch('/api/admin/update-store', { 
                 storeId: selectedStore.id,
                 name: editFormData.name,
@@ -135,15 +126,14 @@ export default function AdminStores() {
             });
 
         } catch (error) {
-            // 4. Rollback on failure
+            // Rollback on failure
             setStores(previousStores)
             toast.error("Failed to update store on server")
         }
     }
 
     /**
-     * DEBOUNCE EFFECT (Challenge Fix 2)
-     * INTERVIEW NOTE: This prevents the app from filtering/lagging on every single keystroke.
+     * This prevents the app from filtering/lagging on every single keystroke.
      * It waits for 500ms of silence from the user before running the search logic.
      */
     useEffect(() => {
@@ -164,8 +154,7 @@ export default function AdminStores() {
     }, [user])
 
     /**
-     * FILTERING LOGIC
-     * INTERVIEW NOTE: We filter based on 'debouncedSearch' (the delayed value),
+     *  We filter based on 'debouncedSearch' (the delayed value),
      * not 'searchTerm' (the immediate value), to keep performance high.
      */
     const filteredStores = stores.filter(store => {
@@ -227,9 +216,7 @@ export default function AdminStores() {
                 <div className="flex flex-col md:flex-row gap-4 items-center justify-between">
                     <div className="relative w-full md:max-w-md">
                         <Search className="absolute left-4 top-1/2 transform -translate-y-1/2 text-slate-400 w-5 h-5" />
-                        {/* INTERVIEW NOTE: The input updates 'searchTerm' immediately so the UI is responsive (letters appear instantly),
-                           but the useEffect above handles the actual filtering delay.
-                        */}
+            
                         <input
                             type="text"
                             placeholder="Search stores..."
@@ -291,7 +278,7 @@ export default function AdminStores() {
                                         Edit
                                     </button>
                                     
-                                    {/* Delete Button (Challenge Fix 1) */}
+                                    {/* Delete Button  */}
                                     <button 
                                         onClick={() => handleDeleteStore(store.id)}
                                         className="w-full flex items-center justify-center gap-2 px-4 py-2 text-sm font-medium text-red-600 bg-red-50 hover:bg-red-100 rounded-xl transition-colors border border-red-100"
@@ -307,8 +294,6 @@ export default function AdminStores() {
                     <EmptyState searchTerm={searchTerm} />
                 )}
             </div>
-
-            {/* --- Modals --- */}
             
             {/* Edit Modal */}
             {isEditModalOpen && selectedStore && (
@@ -421,8 +406,6 @@ export default function AdminStores() {
     )
 }
 
-// --- HELPER COMPONENTS ---
-// Kept separate to keep the main logic clean
 
 const StatCard = ({ label, value, icon: Icon, color, bg, text }) => (
     <div className="bg-white rounded-3xl p-6 border border-slate-100 shadow-sm hover:shadow-md transition-shadow">
