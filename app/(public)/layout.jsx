@@ -1,4 +1,5 @@
-'use client'
+'use client' 
+
 import Navbar from "@/components/Navbar";
 import Footer from "@/components/Footer";
 import { useEffect } from "react";
@@ -11,34 +12,59 @@ import { fetchCart } from "@/lib/features/cart/cartSlice";
 import { fetchUserRatings } from "@/lib/features/rating/ratingSlice";
 
 export default function PublicLayout({ children }) {
-    const dispatch = useDispatch()
-    const {user} = useUser()
-    const {getToken} = useAuth()
+    // Redux dispatch to trigger actions
+    const dispatch = useDispatch();
 
-    const {cartItems} = useSelector((state)=>state.cart)
+    // isLoaded → ensures auth state is fully loaded before using it
+    const { user, isLoaded } = useUser();
+    const { getToken } = useAuth(); // Used to securely call protected APIs
 
-    useEffect(()=>{
-       dispatch(fetchProducts({}))
-    },[])
+    // Redux selectors to read global state
+    const { cartItems } = useSelector((state) => state.cart);
 
-    useEffect(()=>{
-        if(user){
-            dispatch(fetchCart({getToken}))
-            dispatch(fetchAddress({getToken}))
-            dispatch(fetchUserRatings({getToken}))
+    // Product list from Redux
+    // Used to prevent unnecessary re-fetching of products
+    const products = useSelector((state) => state.product.list);
+
+    useEffect(() => {
+        // We check length to avoid re-fetching products
+        // if they already exist in Redux store
+        if (products.length === 0) {
+            dispatch(fetchProducts({}));
         }
-    },[user])
+    }, []); 
 
-    useEffect(()=>{
-        if(user){
-            dispatch(uploadCart({getToken}))
+    useEffect(() => {
+        // These APIs require authentication,
+        // so we only call them when user is logged in
+        if (user) {
+            dispatch(fetchCart({ getToken }));
+            dispatch(fetchAddress({ getToken }));
+            dispatch(fetchUserRatings({ getToken }));
         }
-    },[cartItems])
+    }, [user]); 
+    // Re-runs only when user logs in or logs out
+
+    useEffect(() => {
+        // This effect syncs cart changes with backend
+        // Debounce is used to prevent API spam
+        if (user && isLoaded) {
+            const timeoutId = setTimeout(() => {
+                dispatch(uploadCart({ getToken }));
+            }, 1000); // Waits 1 second after last cart change
+
+            // If cartItems change again before 1s,
+            // previous API call is cancelled
+            return () => clearTimeout(timeoutId);
+        }
+    }, [cartItems, user, isLoaded]);
 
     return (
         <>
             <Navbar />
-            {children}
+            <main className="min-h-screen">
+                {children}
+            </main>
             <Footer />
         </>
     );

@@ -1,28 +1,41 @@
 import prisma from "@/lib/prisma";
 import { NextResponse } from "next/server";
 
-//Get store info & store products
-export async function GET(request){
+export async function GET(request) {
     try {
-        //Get store username from query params
-        const { searchParams } = new URL(request.url)
-        const username = searchParams.get('username').toLowerCase();
+        // 1. Get username from URL
+        const { searchParams } = new URL(request.url);
+        const username = searchParams.get('username')?.toLowerCase();
 
-        if(!username){
-            return NextResponse.json({error: "missing username"}, { status: 400})
+        // 2. Validate input
+        if (!username) {
+            return NextResponse.json({ error: "Missing username" }, { status: 400 });
         }
-        //Get store info and inStock products with ratings
+
+        // 3. Query Database
+        // FIXED: Changed 'Product' to 'products' to match Prisma Schema
         const store = await prisma.store.findUnique({
-            where: {username, isActive: true},
-            include: {Product: {include: {rating:true}}}
-        })
+            where: { username, isActive: true },
+            include: {
+                products: { 
+                    include: { rating: true } 
+                }
+            }
+        });
 
-        if(!store){
-            return NextResponse.json({error: "missing username"}, { status: 400})
+        // 4. Handle Not Found
+        if (!store) {
+            return NextResponse.json({ error: "Store not found" }, { status: 404 });
         }
-        return NextResponse.json({store})
+
+        // 5. Return Data
+        return NextResponse.json({ store });
+
     } catch (error) {
-        console.error(error);
-        return NextResponse.json({ error: error.code || error.message }, { status: 400})
+        console.error("API Error:", error);
+        return NextResponse.json(
+            { error: error.message || "Internal Server Error" }, 
+            { status: 500 }
+        );
     }
 }

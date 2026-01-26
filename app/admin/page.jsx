@@ -1,7 +1,11 @@
 'use client'
-import Loading from "@/components/Loading"
+
+import { useEffect, useState } from "react"
 import { useAuth } from "@clerk/nextjs"
 import axios from "axios"
+import jsPDF from 'jspdf'
+import autoTable from 'jspdf-autotable'
+import { toast } from "react-hot-toast"
 import {
   CircleDollarSignIcon,
   ShoppingBasketIcon,
@@ -11,10 +15,8 @@ import {
   XCircle,
   CheckCircle,
   Download,
+  RotateCcw
 } from "lucide-react"
-import { useEffect, useState } from "react"
-import jsPDF from 'jspdf'
-import autoTable from 'jspdf-autotable'
 import {
   AreaChart,
   Area,
@@ -27,9 +29,11 @@ import {
 
 export default function AdminDashboard() {
   const { getToken } = useAuth()
-  const currency = process.env.NEXT_PUBLIC_CURRENCY_SYMBOL || 'PKR'
+  const currency = process.env.NEXT_PUBLIC_CURRENCY_SYMBOL || 'Rs'
 
   const [loading, setLoading] = useState(true)
+  
+  // Initialize with safe default values to prevent undefined errors
   const [dashboardData, setDashboardData] = useState({
     products: 0,
     revenue: 0,
@@ -43,41 +47,43 @@ export default function AdminDashboard() {
   
   const [chartData, setChartData] = useState([])
 
-  // --- Helper: Format Currency nicely (e.g., "PKR 1,234") ---
   const formatCurrency = (amount) => {
     return `${currency} ${amount.toLocaleString()}`;
   };
 
-  // --- 1. Helper to Process Real Data for Chart ---
+  // Transforms raw order list into a 7-day revenue array efficiently
   const processChartData = (orders) => {
-    const days = 7;
     const data = [];
     const today = new Date();
     
+    const revenueMap = {};
+    
+    orders.forEach(order => {
+        if (!order.createdAt) return;
+        const dateKey = new Date(order.createdAt).toISOString().split('T')[0];
+        revenueMap[dateKey] = (revenueMap[dateKey] || 0) + (Number(order.total) || 0);
+    });
+
+    // 7-Day Array 
     for (let i = 6; i >= 0; i--) {
         const d = new Date();
         d.setDate(today.getDate() - i);
         const dateStr = d.toLocaleDateString('en-US', { weekday: 'short', month: 'short', day: 'numeric' });
         const dateKey = d.toISOString().split('T')[0];
-        
-        const daysOrders = orders.filter(o => {
-            const orderDate = o.createdAt ? new Date(o.createdAt).toISOString().split('T')[0] : '';
-            return orderDate === dateKey;
-        });
 
-        const dailyRevenue = daysOrders.reduce((acc, curr) => acc + (Number(curr.total) || 0), 0);
-        
         data.push({
             name: dateStr,
-            revenue: dailyRevenue,
-            orders: daysOrders.length
+            revenue: revenueMap[dateKey] || 0,
         });
     }
     return data;
   }
 
+  // --- API: Fetch Data ---
   const fetchDashboardData = async () => {
     try {
+      setLoading(true); // UX: Show spinner immediately on refresh
+      
       const token = await getToken()
       const { data } = await axios.get('/api/admin/dashboard', {
         headers: { Authorization: `Bearer ${token}` },
@@ -96,9 +102,12 @@ export default function AdminDashboard() {
 
       setDashboardData(safeData)
       setChartData(processChartData(safeData.allOrders))
-
+      
     } catch (error) {
       console.error(error)
+      toast.error("Failed to load dashboard data. Please try again.")
+      
+      // Reset to safe empty state on error
       setDashboardData({
         products: 0, revenue: 0, orders: 0, stores: 0,
         refundPending: 0, orderCancelled: 0, refundApproved: 0, allOrders: []
@@ -108,20 +117,20 @@ export default function AdminDashboard() {
     }
   }
 
-  // --- 3. REPORT GENERATOR ---
+  // --- FEATURE: PDF Report Generation ---
   const GenerateReport = () => {
     const doc = new jsPDF();
     const pageWidth = doc.internal.pageSize.getWidth();
     const pageHeight = doc.internal.pageSize.getHeight();
     const today = new Date();
-    const brandColor = [15, 23, 42]; // Slate 900
+    const brandColor = [15, 23, 42]; 
     
-    // Metrics
+    // 1. Calculate Summary Stats
     const totalOrders = dashboardData.orders || 1;
     const aov = dashboardData.revenue / totalOrders;
     const refundRate = ((dashboardData.refundPending + dashboardData.refundApproved) / totalOrders) * 100;
 
-    // --- A. Header ---
+    // 2. Header Design
     doc.setFillColor(...brandColor);
     doc.rect(0, 0, pageWidth, 40, 'F');
     doc.setFontSize(24);
@@ -134,7 +143,7 @@ export default function AdminDashboard() {
     doc.setFontSize(10);
     doc.text(`Date: ${today.toLocaleDateString()}`, pageWidth - 14, 24, { align: 'right' });
 
-    // --- B. KPI Grid ---
+    // 3. Section 1: KPI Cards
     let yPos = 55;
     doc.setFontSize(14);
     doc.setTextColor(...brandColor);
@@ -161,13 +170,13 @@ export default function AdminDashboard() {
         doc.setFontSize(9);
         doc.setTextColor(100, 116, 139);
         doc.text(stat.label, x + 5, yPos + 8);
-        doc.setFontSize(12); // Slightly smaller font for values to fit
+        doc.setFontSize(12);
         doc.setTextColor(...brandColor);
         doc.setFont("helvetica", "bold");
         doc.text(stat.value, x + 5, yPos + 18);
     });
 
-    // --- C. Efficiency Metrics ---
+    // 4. Section 2: Efficiency Metrics
     yPos += cardHeight + 15;
     doc.setFontSize(14);
     doc.setTextColor(...brandColor);
@@ -186,7 +195,7 @@ export default function AdminDashboard() {
     doc.setFont("helvetica", "normal");
     doc.text(`${refundRate.toFixed(1)}%`, 130, yPos);
 
-    // --- D. Transaction Logs Table ---
+    // 5. Section 3: Transaction Table
     yPos += 15;
     doc.setFontSize(14);
     doc.setTextColor(...brandColor);
@@ -212,9 +221,8 @@ export default function AdminDashboard() {
         columnStyles: { 4: { halign: 'right' } }
     });
 
-    // --- E. Daily Revenue Table ---
+    // 6. Section 4: Revenue Table (New Page logic)
     let finalY = doc.lastAutoTable.finalY + 15;
-    
     if (finalY + 60 > pageHeight) {
         doc.addPage();
         finalY = 20;
@@ -227,7 +235,8 @@ export default function AdminDashboard() {
 
     const revenueRows = chartData.map(day => [
         day.name,
-        day.orders,
+        // Calculate daily order count strictly from chart data if available, or approximate
+        dashboardData.allOrders.filter(o => new Date(o.createdAt).toLocaleDateString('en-US', { weekday: 'short', month: 'short', day: 'numeric' }) === day.name).length,
         formatCurrency(day.revenue)
     ]);
 
@@ -244,7 +253,7 @@ export default function AdminDashboard() {
         }
     });
 
-    // Footer
+    // 7. Footer (Page Numbers)
     const totalPages = doc.internal.getNumberOfPages();
     for(let i = 1; i <= totalPages; i++) {
         doc.setPage(i);
@@ -256,10 +265,12 @@ export default function AdminDashboard() {
     doc.save(`DreamSaver_Audit_${today.toISOString().split('T')[0]}.pdf`);
   }
 
+  // Initial Data Load
   useEffect(() => {
     fetchDashboardData()
   }, [])
 
+  // UI Configuration Arrays
   const mainStats = [
     {
       title: 'Total Products',
@@ -271,14 +282,14 @@ export default function AdminDashboard() {
     },
     {
       title: 'Total Revenue',
-      value: formatCurrency(dashboardData.revenue), // Use Helper
+      value: formatCurrency(dashboardData.revenue),
       icon: CircleDollarSignIcon,
       gradient: 'from-emerald-500 to-teal-600',
       bgLight: 'bg-emerald-50/50',
       textColor: 'text-emerald-600',
     },
     {
-      title: 'Total Goals',
+      title: 'Total Orders',
       value: dashboardData.orders,
       icon: TagsIcon,
       gradient: 'from-violet-500 to-purple-600',
@@ -322,10 +333,11 @@ export default function AdminDashboard() {
     },
   ]
 
-  if (loading) {
+  // Conditional Rendering: Only show full spinner on initial empty load
+  if (loading && dashboardData.products === 0 && dashboardData.revenue === 0) {
     return (
       <div className="flex items-center justify-center min-h-[70vh]">
-        <Loading />
+        <div className="animate-spin rounded-full h-12 w-12 border-b-2 border-blue-600"></div>
       </div>
     )
   }
@@ -334,6 +346,7 @@ export default function AdminDashboard() {
     <div className="relative min-h-[85vh] w-full bg-slate-50/50">
       <div className="max-w-7xl mx-auto space-y-8 mb-24 px-4 sm:px-6 lg:px-8 py-8">
         
+        {/* HEADER SECTION */}
         <div className="flex flex-col md:flex-row md:items-center justify-between gap-6">
           <div className="space-y-1">
             <h1 className="text-3xl sm:text-4xl font-extrabold text-slate-900 tracking-tight">
@@ -349,6 +362,22 @@ export default function AdminDashboard() {
           </div>
 
           <div className="flex flex-wrap items-center gap-3">
+            {/* Action 1: Refresh Button */}
+            <button 
+                onClick={fetchDashboardData}
+                disabled={loading}
+                className={`p-2 rounded-full border shadow-sm transition-all ${
+                    loading ? "bg-gray-100 cursor-not-allowed" : "bg-white hover:bg-gray-50 hover:scale-105"
+                }`}
+                title="Refresh Data"
+            >
+                <RotateCcw 
+                    size={20} 
+                    className={`text-slate-600 ${loading ? "animate-spin" : ""}`} 
+                />
+            </button>
+
+            {/* Action 2: PDF Button */}
             <button 
               onClick={GenerateReport}
               className="flex items-center gap-2 bg-slate-900 text-white px-4 py-2 rounded-full shadow-lg shadow-slate-900/20 hover:bg-slate-800 hover:scale-105 transition-all active:scale-95"
@@ -357,6 +386,7 @@ export default function AdminDashboard() {
               <span className="text-sm font-medium">Download Report</span>
             </button>
             
+            {/* System Status Indicator */}
             <div className="flex items-center gap-2 bg-white/80 backdrop-blur-sm px-4 py-2 rounded-full border border-blue-100 shadow-sm cursor-default">
               <span className="relative flex h-3 w-3">
                 <span className="animate-ping absolute inline-flex h-full w-full rounded-full bg-green-400 opacity-75"></span>
@@ -367,7 +397,7 @@ export default function AdminDashboard() {
           </div>
         </div>
 
-        {/* Stats Grids */}
+        {/* SECTION 1: Main Grid */}
         <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-6">
           {mainStats.map((card, index) => (
             <div key={index} className="group relative bg-white rounded-3xl p-6 border border-slate-100 shadow-sm hover:shadow-xl hover:shadow-slate-200/50 transition-all duration-300 ease-out hover:-translate-y-1 overflow-hidden">
@@ -387,6 +417,7 @@ export default function AdminDashboard() {
           ))}
         </div>
 
+        {/* SECTION 2: Order Status Overview */}
         <div>
           <h2 className="text-xl font-bold text-slate-800 mb-4 px-1">Order Status Overview</h2>
           <div className="grid grid-cols-1 md:grid-cols-3 gap-6">
@@ -407,7 +438,7 @@ export default function AdminDashboard() {
           </div>
         </div>
 
-        {/* Analytics Chart Section */}
+        {/* SECTION 3: Analytics Chart */}
         <div className="w-full">
            <div className="bg-white rounded-3xl border border-slate-100 shadow-sm p-6">
               <div className="flex items-center justify-between mb-6">
@@ -434,14 +465,12 @@ export default function AdminDashboard() {
                       tick={{fill: '#64748b', fontSize: 12}} 
                       dy={10}
                     />
-                    {/* ✅ Y-AXIS: Formatted Numbers */}
                     <YAxis 
                       axisLine={false} 
                       tickLine={false} 
                       tick={{fill: '#64748b', fontSize: 12}} 
                       tickFormatter={(value) => formatCurrency(value)}
                     />
-                    {/* ✅ TOOLTIP: Formatted Numbers */}
                     <Tooltip 
                       contentStyle={{ backgroundColor: '#fff', borderRadius: '12px', border: '1px solid #e2e8f0', boxShadow: '0 4px 6px -1px rgb(0 0 0 / 0.1)' }}
                       itemStyle={{ fontSize: '12px', fontWeight: 600 }}

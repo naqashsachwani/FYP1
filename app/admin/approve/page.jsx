@@ -1,5 +1,6 @@
 'use client'
-import { useEffect, useState } from "react"
+
+import { useEffect, useState, useMemo } from "react"
 import { useAuth, useUser } from "@clerk/nextjs"
 import axios from "axios"
 import toast from "react-hot-toast"
@@ -12,16 +13,24 @@ import {
   Clock,
   AlertCircle,
   Store,
-  Search
+  Search,
+  Loader2 
 } from "lucide-react"
 
 export default function AdminApprove() {
+  //Clerk hooks to get the current user and their session token.
   const { user } = useUser()
   const { getToken } = useAuth()
+  
   const [stores, setStores] = useState([])
   const [loading, setLoading] = useState(true)
+  
   const [searchTerm, setSearchTerm] = useState("")
   const [statusFilter, setStatusFilter] = useState("pending")
+  
+  // Instead of a global 'isSubmitting' boolean, we store the specific ID of the store being modified.
+  // This allows us to disable only the buttons for *that specific card* while leaving others active.
+  const [processingId, setProcessingId] = useState(null)
 
   const fetchStores = async () => {
     try {
@@ -37,35 +46,55 @@ export default function AdminApprove() {
     }
   }
 
+  // Action Handler: Approving or Rejecting a store
   const handleApprove = async ({ storeId, status }) => {
+    setProcessingId(storeId)
+    
     try {
       const token = await getToken()
+      
+      // API Call: Send the decision to the backend
       const { data } = await axios.post('/api/admin/approve-store', { storeId, status }, {
         headers: { Authorization: `Bearer ${token}` }
       })
+      
       toast.success(data.message)
       await fetchStores()
     } catch (error) {
       toast.error(error?.response?.data?.error || error.message)
+    } finally {
+      // 4. Unlock UI: Always clean up state, even if error occurred
+      setProcessingId(null)
     }
   }
 
+  // Initial Data Fetch
   useEffect(() => {
     if (user) fetchStores()
   }, [user])
 
-  const filteredStores = stores.filter(store => {
-    const matchesSearch =
-      store.name.toLowerCase().includes(searchTerm.toLowerCase()) ||
-      store.username.toLowerCase().includes(searchTerm.toLowerCase()) ||
-      store.user.name.toLowerCase().includes(searchTerm.toLowerCase())
-    const matchesStatus = statusFilter === "all" || store.status === statusFilter
-    return matchesSearch && matchesStatus
-  })
+  // ================= PERFORMANCE OPTIMIZATION =================
+  
 
-  const pendingCount = stores.filter(s => s.status === 'pending').length
-  const approvedCount = stores.filter(s => s.status === 'approved').length
-  const rejectedCount = stores.filter(s => s.status === 'rejected').length
+  // Filtering is an expensive operation. useMemo ensures we only re-run this logic 
+  // when 'stores', 'searchTerm', or 'statusFilter' actually changes, preventing lag 
+  // on every single React render."
+  const filteredStores = useMemo(() => {
+    return stores.filter(store => {
+      const term = searchTerm.toLowerCase()
+      const matchesSearch =
+        store.name.toLowerCase().includes(term) ||
+        store.username.toLowerCase().includes(term) ||
+        store.user.name.toLowerCase().includes(term)
+      
+      const matchesStatus = statusFilter === "all" || store.status === statusFilter
+      return matchesSearch && matchesStatus
+    })
+  }, [stores, searchTerm, statusFilter])
+
+  const pendingCount = useMemo(() => stores.filter(s => s.status === 'pending').length, [stores])
+  const approvedCount = useMemo(() => stores.filter(s => s.status === 'approved').length, [stores])
+  const rejectedCount = useMemo(() => stores.filter(s => s.status === 'rejected').length, [stores])
 
   if (loading)
     return (
@@ -76,7 +105,7 @@ export default function AdminApprove() {
 
   return (
     <div className="space-y-6 mb-28 px-3 sm:px-6 lg:px-8 w-full max-w-7xl mx-auto">
-      {/* Header */}
+      {/* Header Section */}
       <div className="flex flex-col lg:flex-row lg:items-center justify-between gap-4">
         <div>
           <h1 className="text-2xl sm:text-3xl font-bold text-slate-800">
@@ -95,7 +124,7 @@ export default function AdminApprove() {
         </div>
       </div>
 
-      {/* Stats */}
+      {/* KPI Stats Cards */}
       <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-4">
         {[ 
           { label: "Pending Review", count: pendingCount, color: "yellow" },
@@ -109,6 +138,7 @@ export default function AdminApprove() {
                 {stat.count}
               </p>
             </div>
+            {/* Dynamic Icon Rendering based on stat type */}
             <div className={`w-10 h-10 sm:w-12 sm:h-12 bg-${stat.color}-100 rounded-xl flex items-center justify-center`}>
               {stat.color === "yellow" ? (
                 <Clock className={`text-${stat.color}-600`} />
@@ -122,10 +152,12 @@ export default function AdminApprove() {
         ))}
       </div>
 
-      {/* Filters */}
+      {/* Filters & Search Toolbar */}
       <div className="bg-white rounded-2xl p-5 sm:p-6 border border-slate-200 shadow-sm">
         <div className="flex flex-col md:flex-row gap-4 sm:items-center justify-between">
           <div className="flex flex-col sm:flex-row gap-4 w-full sm:w-auto flex-1">
+            
+            {/* Search Input */}
             <div className="relative flex-1 max-w-md">
               <Search className="absolute left-3 top-1/2 -translate-y-1/2 text-slate-400 w-4 h-4" />
               <input
@@ -137,6 +169,7 @@ export default function AdminApprove() {
               />
             </div>
 
+            {/* Status Dropdown */}
             <div className="flex items-center gap-2 sm:gap-3">
               <span className="text-slate-700 text-sm font-medium">Filter:</span>
               <select
@@ -158,11 +191,13 @@ export default function AdminApprove() {
         </div>
       </div>
 
-      {/* Store Cards */}
+      {/* Store List Grid */}
       {filteredStores.length ? (
         <div className="grid gap-5 sm:gap-6 grid-cols-1 md:grid-cols-2">
           {filteredStores.map((store) => (
             <div key={store.id} className="bg-white border border-slate-200 rounded-2xl shadow-sm hover:shadow-md transition-all overflow-hidden">
+              
+              {/* Card Header: Status Badge */}
               <div className={`px-4 sm:px-6 py-3 border-b text-sm ${store.status === "pending" ? "bg-yellow-50 border-yellow-200" : store.status === "approved" ? "bg-green-50 border-green-200" : "bg-red-50 border-red-200"}`}>
                 <div className="flex flex-wrap items-center justify-between gap-2">
                   <div className="flex items-center gap-2">
@@ -178,9 +213,14 @@ export default function AdminApprove() {
               </div>
 
               <div className="p-5 sm:p-6">
+                {/* Store Details Component (reusable) */}
                 <StoreInfo store={store} />
+                
+                {/* CONDITIONAL ACTION BUTTONS */}
                 {store.status === "pending" ? (
                   <div className="flex flex-col sm:flex-row gap-3 mt-6 pt-5 border-t border-slate-200">
+                    
+                    {/* Approve Button */}
                     <button
                       onClick={() =>
                         toast.promise(handleApprove({ storeId: store.id, status: "approved" }), {
@@ -189,22 +229,31 @@ export default function AdminApprove() {
                           error: "Approval failed",
                         })
                       }
-                      className="flex-1 flex items-center justify-center gap-2 px-4 py-2.5 sm:py-3 bg-green-600 text-white rounded-xl hover:bg-green-700 text-sm font-medium transition-all"
+                      disabled={processingId !== null} 
+                      className="flex-1 flex items-center justify-center gap-2 px-4 py-2.5 sm:py-3 bg-green-600 text-white rounded-xl hover:bg-green-700 disabled:opacity-50 disabled:cursor-not-allowed text-sm font-medium transition-all"
                     >
-                      <CheckCircle size={16} /> Approve
+                      {processingId === store.id ? <Loader2 className="animate-spin" size={16} /> : <CheckCircle size={16} />} 
+                      Approve
                     </button>
+
                     <button
-                      onClick={() =>
-                        toast.promise(handleApprove({ storeId: store.id, status: "rejected" }), {
-                          loading: "Rejecting...",
-                          success: "Store rejected!",
-                          error: "Rejection failed",
-                        })
-                      }
-                      className="flex-1 flex items-center justify-center gap-2 px-4 py-2.5 sm:py-3 bg-red-600 text-white rounded-xl hover:bg-red-700 text-sm font-medium transition-all"
+                      onClick={() => {
+                        // confirm dialog prevents accidental deletions
+                        if (confirm("Are you sure you want to REJECT this store? This cannot be undone.")) {
+                            toast.promise(handleApprove({ storeId: store.id, status: "rejected" }), {
+                                loading: "Rejecting...",
+                                success: "Store rejected!",
+                                error: "Rejection failed",
+                            })
+                        }
+                      }}
+                      disabled={processingId !== null}
+                      className="flex-1 flex items-center justify-center gap-2 px-4 py-2.5 sm:py-3 bg-red-600 text-white rounded-xl hover:bg-red-700 disabled:opacity-50 disabled:cursor-not-allowed text-sm font-medium transition-all"
                     >
-                      <XCircle size={16} /> Reject
+                      {processingId === store.id ? <Loader2 className="animate-spin" size={16} /> : <XCircle size={16} />}
+                      Reject
                     </button>
+                    
                   </div>
                 ) : (
                   <div className={`mt-6 p-4 rounded-lg border text-sm font-medium flex items-center gap-2 ${store.status === "approved" ? "bg-green-50 border-green-200 text-green-800" : "bg-red-50 border-red-200 text-red-800"}`}>
@@ -221,6 +270,7 @@ export default function AdminApprove() {
                 )}
               </div>
 
+              {/* Card Footer: Metadata */}
               <div className="bg-slate-50 px-5 py-3 border-t border-slate-200 text-xs text-slate-500 flex flex-wrap justify-between gap-2">
                 <div className="flex items-center gap-1.5">
                   <Store size={12} />
