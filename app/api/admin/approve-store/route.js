@@ -1,24 +1,30 @@
-import prisma from "@/lib/prisma";
-import authAdmin from "@/middlewares/authAdmin";
-import { getAuth } from "@clerk/nextjs/server";
-import { NextResponse } from "next/server";
+import prisma from "@/lib/prisma"; // Prisma client for database operations
+import authAdmin from "@/middlewares/authAdmin"; // Middleware to check if user is admin
+import { getAuth } from "@clerk/nextjs/server"; // Clerk server-side auth helper
+import { NextResponse } from "next/server"; // Next.js response helper
 
-// ✅ Approve / Reject Seller (Transactional Update)
+// ================================
+// POST: Approve or Reject a Store
+// ================================
 export async function POST(request) {
   try {
+    // Get authenticated user ID
     const { userId } = getAuth(request);
-    const isAdmin = await authAdmin(userId);
 
+    // Check if user is an admin
+    const isAdmin = await authAdmin(userId);
     if (!isAdmin) {
       return NextResponse.json({ error: "not-authorized" }, { status: 401 });
     }
 
-    const { storeId, status } = await request.json(); // status = 'approved' or 'rejected'
+    // Parse storeId and status ('approved' or 'rejected') from request body
+    const { storeId, status } = await request.json();
 
+    //  Execute transactional update to ensure consistency
     await prisma.$transaction(async (tx) => {
-        // 1. Update Store Status
+        // ---- Update the store's status and active flag ----
         const storeUpdateData = {
-            status: status,
+            status: status, // store status = 'approved' or 'rejected'
             isActive: status === "approved" // Only active if approved
         };
         await tx.store.update({
@@ -26,21 +32,21 @@ export async function POST(request) {
             data: storeUpdateData
         });
 
-        // 2. Update Application Status
-        // We look for the application associated with this storeId
+        // ---- Update the associated store application ----
         const appStatus = status === "approved" ? "APPROVED" : "REJECTED";
         
-        // Note: Prisma updateMany is used here in case of edge cases, but logic dictates one app per store
+        // Use updateMany in case there are multiple applications for the same store (edge case)
         await tx.storeApplication.updateMany({
             where: { storeId: storeId },
             data: { 
                 status: appStatus,
-                reviewedBy: userId,
-                reviewedAt: new Date()
+                reviewedBy: userId, // Track which admin reviewed it
+                reviewedAt: new Date() // Timestamp of review
             }
         });
     });
 
+    //  Return success message
     return NextResponse.json({ message: `Store ${status} successfully` });
   } catch (error) {
     console.error(error);
@@ -51,25 +57,31 @@ export async function POST(request) {
   }
 }
 
-// ✅ Get all pending and rejected stores
+// ==========================================
+// GET: Fetch all pending or rejected stores
+// ==========================================
 export async function GET(request) {
   try {
+    // 1️⃣ Get authenticated user ID
     const { userId } = getAuth(request);
-    const isAdmin = await authAdmin(userId);
 
+    // 2️⃣ Ensure user is an admin
+    const isAdmin = await authAdmin(userId);
     if (!isAdmin) {
       return NextResponse.json({ error: "not authorized" }, { status: 401 });
     }
 
-    // Include StoreApplication data if you want to show CNIC/Bank info in the admin panel
+    // 3️⃣ Fetch stores with status 'pending' or 'rejected'
+    // Include user and storeApplication data for admin panel display
     const stores = await prisma.store.findMany({
       where: { status: { in: ["pending", "rejected"] } },
       include: { 
-          user: true,
-          storeApplication: true // Fetch application details to show Admin
+          user: true, // Include user info (name, email)
+          storeApplication: true // Include application info (CNIC, bank, etc.)
       },
     });
 
+    // 4️⃣ Return stores data
     return NextResponse.json({ stores });
   } catch (error) {
     console.error(error);
