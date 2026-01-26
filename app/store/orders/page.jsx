@@ -1,15 +1,19 @@
 'use client'
-import { useEffect, useState } from "react"
+import { useEffect, useState, useMemo } from "react"
 import Loading from "@/components/Loading"
 import { useAuth } from "@clerk/nextjs"
 import axios from "axios"
 import toast from "react-hot-toast"
+import Image from "next/image" // Challenge 2 Fix
+import { Search } from "lucide-react" // Icon for search bar
 
 export default function StoreOrders() {
     const [orders, setOrders] = useState([])
     const [loading, setLoading] = useState(true)
     const [selectedOrder, setSelectedOrder] = useState(null)
     const [isModalOpen, setIsModalOpen] = useState(false)
+    
+    const [searchTerm, setSearchTerm] = useState("")
  
     const { getToken } = useAuth()
 
@@ -25,14 +29,20 @@ export default function StoreOrders() {
        } finally {
          setLoading(false)
        }
-    }   
+    }    
 
+    // Instead of waiting for the server to respond and then refetching the list (slow),
+    // we update the local state immediately. This makes the app feel instant.
     const updateOrderStatus = async (orderId, status) => {
        try {
          const token = await getToken()
+         
+         // 1. Update Server
          await axios.post('/api/store/orders', { orderId, status }, {
             headers: { Authorization: `Bearer ${token}` }
          })
+         
+         // 2. Update Local State (Optimistic)
          setOrders(prev =>
             prev.map(order =>
                order.id === orderId ? { ...order, status } : order
@@ -43,6 +53,21 @@ export default function StoreOrders() {
          toast.error(error?.response?.data?.error || error.message)
        }
     }
+ 
+    // Without useMemo, these .filter() operations would run every time the component renders 
+    // useMemo caches the result and only recalculates if 'orders' changes.
+    const stats = useMemo(() => {
+        return {
+            total: orders.length,
+            delivered: orders.filter(o => o.status === 'DELIVERED').length,
+            processing: orders.filter(o => o.status === 'PROCESSING').length,
+            shipped: orders.filter(o => o.status === 'SHIPPED').length,
+        }
+    }, [orders])
+
+    const filteredOrders = orders.filter(order => 
+        order.user?.name?.toLowerCase().includes(searchTerm.toLowerCase())
+    )
 
     const openModal = (order) => {
         setSelectedOrder(order)
@@ -78,14 +103,27 @@ export default function StoreOrders() {
         <div className="min-h-screen bg-gradient-to-br from-gray-50 to-gray-100 p-4 sm:p-6">
             <div className="max-w-7xl mx-auto">
                 {/* Header */}
-                <div className="mb-8 text-center sm:text-left">
-                    <h1 className="text-3xl sm:text-4xl font-bold text-gray-900 mb-2">
-                        Dream<span className="text-blue-600">Saver</span>
-                    </h1>
-                    <p className="text-lg text-gray-600">Store Orders Management</p>
+                <div className="mb-8 text-center sm:text-left flex flex-col md:flex-row md:items-end justify-between gap-4">
+                    <div>
+                        <h1 className="text-3xl sm:text-4xl font-bold text-gray-900 mb-2">
+                            Dream<span className="text-blue-600">Saver</span>
+                        </h1>
+                        <p className="text-lg text-gray-600">Store Orders Management</p>
+                    </div>
+
+                    <div className="relative w-full md:w-64">
+                        <Search className="absolute left-3 top-1/2 -translate-y-1/2 text-gray-400 w-4 h-4" />
+                        <input 
+                            type="text" 
+                            placeholder="Search Customer..." 
+                            value={searchTerm}
+                            onChange={(e) => setSearchTerm(e.target.value)}
+                            className="w-full pl-10 pr-4 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-blue-500 outline-none transition-all"
+                        />
+                    </div>
                 </div>
 
-                {/* Stats Cards */}
+                {/* Stats Cards (Using Memoized Data) */}
                 <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4 mb-8">
                     <div className="bg-white rounded-xl shadow-sm border border-gray-200 p-4 sm:p-6">
                         <div className="flex items-center">
@@ -94,7 +132,8 @@ export default function StoreOrders() {
                             </div>
                             <div className="ml-4">
                                 <p className="text-sm font-medium text-gray-600">Total Orders</p>
-                                <p className="text-2xl font-bold text-gray-900">{orders.length}</p>
+                                {/* Using memoized stat */}
+                                <p className="text-2xl font-bold text-gray-900">{stats.total}</p>
                             </div>
                         </div>
                     </div>
@@ -106,9 +145,7 @@ export default function StoreOrders() {
                             </div>
                             <div className="ml-4">
                                 <p className="text-sm font-medium text-gray-600">Delivered</p>
-                                <p className="text-2xl font-bold text-gray-900">
-                                    {orders.filter(order => order.status === 'DELIVERED').length}
-                                </p>
+                                <p className="text-2xl font-bold text-gray-900">{stats.delivered}</p>
                             </div>
                         </div>
                     </div>
@@ -120,9 +157,7 @@ export default function StoreOrders() {
                             </div>
                             <div className="ml-4">
                                 <p className="text-sm font-medium text-gray-600">Processing</p>
-                                <p className="text-2xl font-bold text-gray-900">
-                                    {orders.filter(order => order.status === 'PROCESSING').length}
-                                </p>
+                                <p className="text-2xl font-bold text-gray-900">{stats.processing}</p>
                             </div>
                         </div>
                     </div>
@@ -134,22 +169,22 @@ export default function StoreOrders() {
                             </div>
                             <div className="ml-4">
                                 <p className="text-sm font-medium text-gray-600">Shipped</p>
-                                <p className="text-2xl font-bold text-gray-900">
-                                    {orders.filter(order => order.status === 'SHIPPED').length}
-                                </p>
+                                <p className="text-2xl font-bold text-gray-900">{stats.shipped}</p>
                             </div>
                         </div>
                     </div>
                 </div>
 
                 {/* Orders Table/Cards */}
-                {orders.length === 0 ? (
+                {filteredOrders.length === 0 ? (
                     <div className="bg-white rounded-2xl shadow-sm border border-gray-200 p-8 text-center">
                         <div className="w-24 h-24 mx-auto mb-4 bg-gray-100 rounded-full flex items-center justify-center">
                             <span className="text-3xl">📭</span>
                         </div>
                         <h3 className="text-xl font-semibold text-gray-900 mb-2">No Orders Found</h3>
-                        <p className="text-gray-600">Orders will appear here once customers start placing them.</p>
+                        <p className="text-gray-600">
+                            {searchTerm ? `No results for "${searchTerm}"` : "Orders will appear here once customers goals complete."}
+                        </p>
                     </div>
                 ) : (
                     <>
@@ -167,7 +202,8 @@ export default function StoreOrders() {
                                         </tr>
                                     </thead>
                                     <tbody className="divide-y divide-gray-200">
-                                        {orders.map((order, index) => (
+                                        {/* Using filteredOrders here */}
+                                        {filteredOrders.map((order, index) => (
                                             <tr
                                                 key={order.id}
                                                 className="hover:bg-gray-50 transition-all duration-200 cursor-pointer group"
@@ -200,6 +236,11 @@ export default function StoreOrders() {
                                                     )}
                                                 </td>
                                                 <td className="px-6 py-4 whitespace-nowrap" onClick={(e) => e.stopPropagation()}>
+                                                    {/* topPropagation()
+                                                        We use this because the <tr> has an onClick event to open the modal.
+                                                        If we click this dropdown, the event would bubble up and open the modal,
+                                                        which is annoying. This stops that behavior.
+                                                    */}
                                                     <select
                                                         value={order.status}
                                                         onChange={e => updateOrderStatus(order.id, e.target.value)}
@@ -239,7 +280,7 @@ export default function StoreOrders() {
 
                         {/* Mobile Cards */}
                         <div className="lg:hidden space-y-4">
-                            {orders.map((order, index) => (
+                            {filteredOrders.map((order, index) => (
                                 <div
                                     key={order.id}
                                     className="bg-white rounded-2xl shadow-sm border border-gray-200 p-6 hover:shadow-md transition-all duration-200 cursor-pointer"
@@ -378,14 +419,15 @@ export default function StoreOrders() {
                                     <div className="space-y-3">
                                         {selectedOrder.orderItems.map((item, i) => (
                                             <div key={i} className="flex items-center gap-4 bg-white border border-gray-200 rounded-xl p-4 hover:shadow-sm transition-shadow">
-                                                <img
-                                                    src={item.product.images?.[0]?.src || item.product.images?.[0] || '/api/placeholder/80/80'}
-                                                    alt={item.product?.name}
-                                                    className="w-16 h-16 object-cover rounded-lg"
-                                                    onError={(e) => {
-                                                        e.target.src = '/api/placeholder/80/80'
-                                                    }}
-                                                />
+                                                <div className="relative w-16 h-16 rounded-lg overflow-hidden border border-gray-100 flex-shrink-0">
+                                                    <Image
+                                                        src={item.product.images?.[0] || '/api/placeholder/80/80'} // Fallback logic
+                                                        alt={item.product?.name || "Product Image"}
+                                                        fill // Automatically fills parent container
+                                                        sizes="64px"
+                                                        className="object-cover"
+                                                    />
+                                                </div>
                                                 <div className="flex-1 min-w-0">
                                                     <p className="font-medium text-gray-900 truncate">{item.product?.name}</p>
                                                     <div className="flex items-center space-x-4 mt-1 text-sm text-gray-600">

@@ -1,12 +1,10 @@
 'use client'
 
-// INTERVIEW NOTE: 'use client' is required because we use useState, useEffect, and event handlers.
 import { useAuth } from "@clerk/nextjs"
 import axios from "axios"
 import Image from "next/image"
 import { useState } from "react"
 import { toast } from "react-hot-toast"
-// Replaced the external asset import with an Icon for better portability
 import { UploadCloud, X } from "lucide-react" 
 
 export default function StoreAddProduct() {
@@ -18,8 +16,6 @@ export default function StoreAddProduct() {
     'Food & Drink', 'Hobbies & Crafts', 'Others'
   ]
 
-  // INTERVIEW NOTE: We use an object with keys 1-4 to map specific image slots.
-  // This is easier than an array because we can update specific slots (e.g., "Image 3") directly.
   const [images, setImages] = useState({ 1: null, 2: null, 3: null, 4: null })
   
   const [productInfo, setProductInfo] = useState({
@@ -33,8 +29,7 @@ export default function StoreAddProduct() {
   const [loading, setLoading] = useState(false)
   const { getToken } = useAuth()
 
-  // INTERVIEW NOTE: A generic handler for all text inputs.
-  // It uses [e.target.name] (Computed Property Names) to update the correct state field dynamically.
+  // It uses [e.target.name] to update the correct state field dynamically.
   const onChangeHandler = (e) => {
     const { name, value } = e.target
     setProductInfo(prev => ({ ...prev, [name]: value }))
@@ -44,7 +39,6 @@ export default function StoreAddProduct() {
     setImages(prev => ({ ...prev, [key]: file }))
   }
 
-  // CHALLENGE 2 FIX: Clear Form Handler
   // This resets the state to initial values, allowing the user to start over.
   const handleReset = () => {
     if(confirm("Are you sure you want to clear the form?")) {
@@ -57,8 +51,6 @@ export default function StoreAddProduct() {
   const onSubmitHandler = async (e) => {
     e.preventDefault()
     
-    // CHALLENGE 1 FIX: Logic Validation
-    // We must ensure the business logic makes sense before sending data to the server.
     if (Number(productInfo.price) > Number(productInfo.mrp)) {
         return toast.error("Offer Price cannot be higher than Actual Price (MRP)")
     }
@@ -70,7 +62,6 @@ export default function StoreAddProduct() {
       }
       setLoading(true)
 
-      // INTERVIEW NOTE: Why FormData? 
       // JSON cannot send binary files (images). FormData mimics a standard HTML form submission,
       // allowing us to send text fields AND files in a single 'multipart/form-data' request.
       const formData = new FormData()
@@ -88,7 +79,6 @@ export default function StoreAddProduct() {
       const { data } = await axios.post('/api/store/product', formData, {
         headers: { 
           Authorization: `Bearer ${token}`,
-          // INTERVIEW NOTE: This header is crucial. It tells the server to expect file data.
           // Axios usually sets this automatically when seeing FormData, but being explicit is safer.
           'Content-Type': 'multipart/form-data'
         },
@@ -129,11 +119,7 @@ export default function StoreAddProduct() {
                 htmlFor={`images${key}`}
                 className="cursor-pointer hover:scale-[1.03] transition-transform block"
               >
-                {/* INTERVIEW NOTE: Conditional Rendering for Image Preview
-                   If an image is selected -> Show the Image component with a blob URL (preview).
-                   If NO image -> Show the UploadCloud icon (fallback).
-                   This removes the dependency on external asset files.
-                */}
+               
                 <div className="h-24 w-full border border-dashed border-slate-300 rounded-lg bg-slate-50 flex items-center justify-center overflow-hidden relative">
                     {images[key] ? (
                         <Image
@@ -243,7 +229,6 @@ export default function StoreAddProduct() {
           </select>
         </div>
 
-        {/* Action Buttons: CHALLENGE 2 UI */}
         <div className="flex gap-4 mt-8">
             <button
                 type="button" 
