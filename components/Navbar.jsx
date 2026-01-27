@@ -4,7 +4,7 @@ import { PackageIcon, Search, ShoppingCart, Menu, X } from "lucide-react"; // Ic
 import Link from "next/link"; // Next.js Link component for navigation
 import { useRouter } from "next/navigation"; // Router for programmatic navigation
 import { useState } from "react"; // React state hook
-import { useSelector } from "react-redux"; // Access Redux store
+// REMOVED: import { useSelector } from "react-redux"; 
 import { useUser, useClerk, UserButton, Protect } from "@clerk/nextjs"; // Clerk auth components
 
 const Navbar = () => {
@@ -13,7 +13,8 @@ const Navbar = () => {
   const router = useRouter(); // Next.js router
   const [search, setSearch] = useState(""); // Search input state
   const [isMobileMenuOpen, setIsMobileMenuOpen] = useState(false); // Mobile menu state
-  const cartCount = useSelector((state) => state.cart.total); // Get cart item count from Redux
+  
+  // REMOVED: const cartCount = useSelector((state) => state.cart.total);
 
   // Handle search submission
   const handleSearch = (e) => {
@@ -42,9 +43,6 @@ const Navbar = () => {
             <h1 className="text-3xl lg:text-4xl font-bold text-slate-800 group-hover:text-green-600 transition-colors">
               <span className="text-green-600">Dream</span>Saver
             </h1>
-
-            
-
             <span className="text-green-600 text-4xl lg:text-5xl absolute -top-1 -right-3">.</span>
           </Link>
 
@@ -57,7 +55,6 @@ const Navbar = () => {
                 className="relative group hover:text-green-600 transition-colors"
               >
                 {link.label}
-                {/* Underline animation */}
                 <span className="absolute -bottom-1 left-0 w-0 h-0.5 bg-green-600 group-hover:w-full transition-all duration-300"></span>
               </Link>
             ))}
@@ -88,13 +85,9 @@ const Navbar = () => {
             >
               <ShoppingCart size={20} />
               <span className="hidden sm:block text-sm font-medium">My Goals</span>
-
-              {/* Show cart count badge */}
-              {cartCount > 0 && (
-                <span className="absolute -top-1 -right-1 text-xs text-white bg-green-500 w-5 h-5 rounded-full flex items-center justify-center shadow-md">
-                  {cartCount}
-                </span>
-              )}
+              
+              {/* REMOVED: Cart count badge code block was here */}
+              
             </Link>
 
             {/* Sign In / User Button */}
@@ -107,7 +100,8 @@ const Navbar = () => {
               </button>
             ) : (
               <div className="hidden sm:block">
-                <UserButton afterSignOutUrl="/" />
+                {/* Note: Remember to add the redirect to .env.local as discussed! */}
+                <UserButton />
               </div>
             )}
 
@@ -177,7 +171,7 @@ const Navbar = () => {
             ) : (
               <div className="flex items-center justify-between py-3 px-2">
                 <span className="text-slate-700 font-medium">Account</span>
-                <UserButton afterSignOutUrl="/" />
+                <UserButton />
               </div>
             )}
           </div>
