@@ -2,7 +2,7 @@ import prisma from "@/lib/prisma"; // Prisma client for DB
 import { getAuth } from "@clerk/nextjs/server"; // Clerk auth for server
 import { NextResponse } from "next/server"; // Next.js response helper
 
-// ---------------- Helper: Normalize Decimal to Number ----------------
+// ---------------- Normalize Decimal to Number ----------------
 // Prisma stores decimals as objects; this converts them to normal numbers for JSON
 const normalize = (obj) => JSON.parse(
   JSON.stringify(obj, (key, value) => 
