@@ -43,12 +43,7 @@ const Navbar = () => {
               <span className="text-green-600">Dream</span>Saver
             </h1>
 
-            {/* 'Plus' badge only for users with Plus plan */}
-            <Protect plan='plus'>
-              <p className="absolute top-0 -right-4 text-xs font-semibold px-2 py-0.5 rounded-full bg-green-500 text-white flex items-center justify-center shadow-md">
-                plus
-              </p>
-            </Protect>
+            
 
             <span className="text-green-600 text-4xl lg:text-5xl absolute -top-1 -right-3">.</span>
           </Link>
