@@ -100,7 +100,6 @@ const Navbar = () => {
               </button>
             ) : (
               <div className="hidden sm:block">
-                {/* Note: Remember to add the redirect to .env.local as discussed! */}
                 <UserButton />
               </div>
             )}

@@ -1,47 +1,61 @@
-'use client'
+'use client' // Enables client-side features like hooks and router in Next.js
 
 /* ================= Imports ================= */
-import { assets } from '@/assets/assets'
-import { ArrowRightIcon } from 'lucide-react'
-import Image from 'next/image'
-import { useRouter } from 'next/navigation'
-import React from 'react'
 
+import React from 'react'
+import Image from 'next/image' // Optimized image component from Next.js
+import { useRouter } from 'next/navigation' // Client-side navigation
+import { ArrowRightIcon } from 'lucide-react' // Icon for CTA buttons
+
+import heroModelImg from '@/assets/hero_model_img.png'
+import heroProductImg1 from '@/assets/hero_product_img1.png'
+import heroProductImg2 from '@/assets/hero_product_img2.png'
+
+/**
+ * HERO COMPONENT
+ * --------------
+ * Displays the main landing hero banner along with two promotional side banners.
+ * Includes CTA navigation to the shop page.
+ */
 const Hero = () => {
-  // Currency symbol from env (fallback to Rs)
+
+  // Currency symbol from environment variable
+  // Fallbacks to 'Rs' if not defined
   const currency = process.env.NEXT_PUBLIC_CURRENCY_SYMBOL || 'Rs'
 
-  // Next.js router for navigation
+  // Initialize Next.js router
   const router = useRouter()
 
-  // Navigate user to shop page
+  // Navigate user to Shop page
   const goToShop = () => {
     router.push('/shop')
   }
 
   return (
+    // Outer wrapper with responsive horizontal spacing
     <div className='mx-4 sm:mx-6'>
       <div className='flex flex-col xl:flex-row gap-6 lg:gap-8 max-w-7xl mx-auto my-8 lg:my-12'>
 
         {/* ================= MAIN HERO BANNER ================= */}
         <div className='relative flex-1 rounded-3xl overflow-hidden group min-h-[360px] xl:min-h-[420px] shadow-lg'>
           
-          {/* Background Image (Full Cover) */}
+          {/* Background image wrapper */}
           <div className='absolute inset-0'>
+            {/* Main hero background image */}
             <Image
-              src={assets.hero_model_img}
+              src={heroModelImg}
               alt='DreamSaver featured lifestyle'
               fill
               sizes="(min-width: 1280px) 40vw, (min-width: 768px) 50vw, 100vw"
               className='object-cover object-center transform transition-transform duration-700 group-hover:scale-105'
-              priority
+              priority // Loads early for better LCP performance
             />
 
-            {/* Dark gradient overlay for text readability */}
+            {/* Gradient overlay for better text readability */}
             <div className='absolute inset-0 bg-gradient-to-r from-black/60 via-black/30 to-transparent pointer-events-none' />
           </div>
 
-          {/* Hero Content */}
+          {/* Hero text content */}
           <div className='relative z-20 p-6 sm:p-12 lg:p-16 flex items-start h-full'>
             <div className='max-w-lg w-full'> 
               
@@ -53,7 +67,7 @@ const Hero = () => {
                   News
                 </span>
 
-                {/* Offer text */}
+                {/* Promotional message */}
                 <span className='text-[11px] sm:text-sm font-medium text-slate-800 truncate'>
                   Free Shipping on Orders Above {currency} 5000!
                 </span>
@@ -67,7 +81,7 @@ const Hero = () => {
                 </span>
               </h2>
 
-              {/* Subtitle */}
+              {/* Hero subtitle */}
               <p className='text-white/90 text-lg sm:text-xl mt-4 font-medium drop-shadow-md'>
                 Exclusive offers only at DreamSaver
               </p>
@@ -85,7 +99,7 @@ const Hero = () => {
             </div>
           </div>
 
-          {/* Decorative blurred accent */}
+          {/* Decorative blurred accent for depth */}
           <div className='absolute left-6 bottom-6 w-40 h-40 rounded-3xl bg-white/20 blur-[18px] pointer-events-none'></div>
         </div>
 
@@ -95,24 +109,24 @@ const Hero = () => {
           {/* -------- Side Banner 1 -------- */}
           <div className='relative flex-1 rounded-3xl overflow-hidden group min-h-[180px] sm:min-h-[200px] shadow-lg'>
             <Image
-              src={assets.hero_product_img1}
+              src={heroProductImg1}
               alt='DreamSaver picks'
               fill
               sizes="(min-width: 1280px) 24vw, (min-width: 768px) 32vw, 100vw"
               className='object-cover object-center transform transition-transform duration-500 group-hover:scale-110'
             />
 
-            {/* Gradient overlay */}
+            {/* Dark overlay */}
             <div className='absolute inset-0 bg-gradient-to-br from-black/50 via-black/30 to-transparent pointer-events-none' />
 
-            {/* Content */}
+            {/* Banner content */}
             <div className='relative z-20 p-6 lg:p-8 flex items-center justify-between h-full'>
               <div className='text-white'>
                 <p className='text-2xl lg:text-3xl font-bold drop-shadow-lg'>
                   DreamSaver Picks
                 </p>
 
-                {/* Link-like CTA */}
+                {/* Clickable CTA */}
                 <p
                   onClick={goToShop}
                   className='mt-3 text-white/90 font-semibold inline-flex items-center gap-2 cursor-pointer group-hover:text-white'
@@ -125,7 +139,7 @@ const Hero = () => {
               {/* Thumbnail image */}
               <div className='w-24 lg:w-28 h-24 lg:h-28 rounded-2xl overflow-hidden bg-white/20 backdrop-blur-sm border border-white/30'>
                 <Image
-                  src={assets.hero_product_img1}
+                  src={heroProductImg1}
                   alt='product thumbnail'
                   width={160}
                   height={160}
@@ -138,15 +152,17 @@ const Hero = () => {
           {/* -------- Side Banner 2 -------- */}
           <div className='relative flex-1 rounded-3xl overflow-hidden group min-h-[180px] sm:min-h-[200px] shadow-lg'>
             <Image
-              src={assets.hero_product_img2}
+              src={heroProductImg2}
               alt='20% off deals'
               fill
               sizes="(min-width: 1280px) 24vw, (min-width: 768px) 32vw, 100vw"
               className='object-cover object-center transform transition-transform duration-500 group-hover:scale-110'
             />
 
+            {/* Dark overlay */}
             <div className='absolute inset-0 bg-gradient-to-br from-black/50 via-black/30 to-transparent pointer-events-none' />
 
+            {/* Banner content */}
             <div className='relative z-20 p-6 lg:p-8 flex items-center justify-between h-full'>
               <div className='text-white'>
                 <p className='text-2xl lg:text-3xl font-bold drop-shadow-lg'>
@@ -162,9 +178,10 @@ const Hero = () => {
                 </p>
               </div>
 
+              {/* Thumbnail image */}
               <div className='w-24 lg:w-28 h-24 lg:h-28 rounded-2xl overflow-hidden bg-white/20 backdrop-blur-sm border border-white/30'>
                 <Image
-                  src={assets.hero_product_img2}
+                  src={heroProductImg2}
                   alt='deal thumbnail'
                   width={160}
                   height={160}
@@ -174,11 +191,10 @@ const Hero = () => {
             </div>
           </div>
         </div>
-        {/* ================= END SIDE BANNERS ================= */}
-
       </div>
     </div>
   )
 }
 
+// Export Hero component for reuse
 export default Hero
