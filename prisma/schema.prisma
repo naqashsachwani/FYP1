@@ -110,7 +110,15 @@ model Store {
   name        String
   description String
   username    String   @unique
-  address     String
+  address     String   // Existing address field
+  
+  // ✅ NEW FIELDS FOR DELIVERY MAP & SETTINGS
+  city        String?
+  zip         String?
+  country     String?  @default("Pakistan")
+  latitude    Float?   // For GPS Map
+  longitude   Float?   // For GPS Map
+
   status      String   @default("pending")
   isActive    Boolean  @default(false)
   logo        String
@@ -119,7 +127,7 @@ model Store {
   createdAt   DateTime @default(now())
   updatedAt   DateTime @updatedAt
 
-  // Relations
+  // Relations (Kept exactly as you had them)
   products         Product[]
   orders           Order[]
   user             User              @relation(fields: [userId], references: [id])
@@ -231,6 +239,10 @@ model Address {
   zip       String
   country   String
   phone     String
+  
+  latitude  Float?
+  longitude Float?
+
   createdAt DateTime @default(now())
 
   // Relations
@@ -327,7 +339,8 @@ model Delivery {
   carrier         String?
   shippingAddress String?
   coordinates     String?
-
+  destinationLat  Float?
+  destinationLng  Float?
   // Relations
   goal              Goal               @relation(fields: [goalId], references: [id], onDelete: Cascade)
   notifications     Notification[]

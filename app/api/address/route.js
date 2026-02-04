@@ -1,60 +1,73 @@
-import prisma from "@/lib/prisma"; // Import the Prisma client to interact with your database
-import { getAuth } from "@clerk/nextjs/server"; // Import Clerk server-side auth helper
-import { NextResponse } from "next/server"; // Next.js Response helper for API routes
+import { NextResponse } from "next/server";
+import prisma from "@/lib/prisma";
+import { currentUser } from "@clerk/nextjs/server"; 
+
+// ===========================
+// GET: Fetch all addresses
+// ===========================
+export async function GET() {
+  try {
+    const user = await currentUser();
+    
+    if (!user) {
+      return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
+    }
+
+    const addresses = await prisma.address.findMany({
+      where: { userId: user.id },
+      orderBy: { createdAt: 'desc' }
+    });
+
+    return NextResponse.json({ addresses });
+  } catch (error) {
+    console.error("GET Address Error:", error);
+    return NextResponse.json({ error: "Internal Server Error" }, { status: 500 });
+  }
+}
 
 // ===========================
 // POST: Add a new address
 // ===========================
 export async function POST(request) {
-    try {
-        // Get authenticated user ID from the request
-        const { userId } = getAuth(request);
+  try {
+    const user = await currentUser();
+    if (!user) return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
 
-        // Parse request body to get address data
-        const { address } = await request.json();
+    const body = await request.json();
+    
+    // 🔍 LOG THE RECEIVED DATA
+    console.log("📥 API Received Address Data:", body);
 
-        // Attach the authenticated user's ID to the address
-        address.userId = userId;
+    const data = body.address || body;
+    const { name, street, city, state, zip, country, phone, latitude, longitude } = data;
 
-        // Create a new address record in the database
-        const newAddress = await prisma.address.create({
-            data: address
-        });
-
-        // Return success response with the created address
-        return NextResponse.json({
-            newAddress,
-            message: 'Address added successfully'
-        });
-    } catch (error) {
-        // Log the error on the server
-        console.error(error);
-
-        // Return error response with status 400
-        return NextResponse.json({ error: error.message }, { status: 400 });
+    if (!name || !street || !city || !zip) {
+      console.log("❌ Missing Fields:", { name, street, city, zip });
+      return NextResponse.json({ error: "Missing required fields" }, { status: 400 });
     }
-}
 
-// ===========================
-// GET: Fetch all addresses for the authenticated user
-// ===========================
-export async function GET(request) {
-    try {
-        // Get authenticated user ID from the request
-        const { userId } = getAuth(request);
+    const newAddress = await prisma.address.create({
+      data: {
+        userId: user.id,
+        email: user.emailAddresses?.[0]?.emailAddress || "no-email@recorded.com", 
+        name,
+        street,
+        city,
+        state: state || "",
+        zip,
+        country: country || "Pakistan",
+        phone: phone || "",
+        latitude: latitude ? parseFloat(latitude) : null,
+        longitude: longitude ? parseFloat(longitude) : null,
+      }
+    });
 
-        // Fetch all addresses from the database that belong to this user
-        const addresses = await prisma.address.findMany({
-            where: { userId }
-        });
+    console.log("✅ Address Saved Successfully:", newAddress.id);
+    return NextResponse.json({ success: true, newAddress, message: 'Address added successfully' });
 
-        // Return success response with addresses
-        return NextResponse.json({ addresses });
-    } catch (error) {
-        // Log the error on the server
-        console.error(error);
-
-        // Return error response with status 400
-        return NextResponse.json({ error: error.message }, { status: 400 });
-    }
+  } catch (error) {
+    // 🛑 THIS PRINTS THE REAL ERROR TO YOUR TERMINAL
+    console.error("❌ CRITICAL DB ERROR:", error);
+    return NextResponse.json({ error: error.message }, { status: 500 });
+  }
 }

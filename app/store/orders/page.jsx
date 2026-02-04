@@ -4,491 +4,291 @@ import Loading from "@/components/Loading"
 import { useAuth } from "@clerk/nextjs"
 import axios from "axios"
 import toast from "react-hot-toast"
-import Image from "next/image" // Challenge 2 Fix
-import { Search } from "lucide-react" // Icon for search bar
+import { Search, MapPin, Truck, Crosshair } from "lucide-react" // Added Crosshair icon
+import dynamic from 'next/dynamic'
+
+const DeliveryMap = dynamic(() => import('@/components/DeliveryMap'), { ssr: false });
 
 export default function StoreOrders() {
-    const [orders, setOrders] = useState([])
+    const [orders, setOrders] = useState([]) 
     const [loading, setLoading] = useState(true)
     const [selectedOrder, setSelectedOrder] = useState(null)
     const [isModalOpen, setIsModalOpen] = useState(false)
-    
     const [searchTerm, setSearchTerm] = useState("")
- 
     const { getToken } = useAuth()
 
     const fetchOrders = async () => {
        try {
          const token = await getToken()
-         const { data } = await axios.get('/api/store/orders', {
+         const { data } = await axios.get('/api/store/deliveries', {
             headers: { Authorization: `Bearer ${token}` }
          })
-         setOrders(data.orders || [])
+         setOrders(data.deliveries || [])
        } catch (error) {
-         toast.error(error?.response?.data?.error || error.message)
+         toast.error("Failed to fetch orders")
        } finally {
          setLoading(false)
        }
     }    
 
-    // Instead of waiting for the server to respond and then refetching the list (slow),
-    // we update the local state immediately. This makes the app feel instant.
-    const updateOrderStatus = async (orderId, status) => {
+    const updateOrderStatus = async (deliveryId, status) => {
        try {
          const token = await getToken()
-         
-         // 1. Update Server
-         await axios.post('/api/store/orders', { orderId, status }, {
+         await axios.post(`/api/delivery/${deliveryId}`, { status }, {
             headers: { Authorization: `Bearer ${token}` }
          })
          
-         // 2. Update Local State (Optimistic)
-         setOrders(prev =>
-            prev.map(order =>
-               order.id === orderId ? { ...order, status } : order
-            )
-         )
-         toast.success('Order status updated!')
+         setOrders(prev => prev.map(o => o.id === deliveryId ? { ...o, status } : o))
+         toast.success(`Order marked as ${status}`)
        } catch (error) {
-         toast.error(error?.response?.data?.error || error.message)
+         toast.error("Failed to update status")
        }
     }
+
+    // ✅ FEATURE 1: SIMULATE (Fixed to update map instantly)
+    const simulateDriverUpdate = async (deliveryId) => {
+        try {
+            const token = await getToken()
+            // Random point near Karachi
+            const randomLat = 24.8607 + (Math.random() * 0.01); 
+            const randomLng = 67.0011 + (Math.random() * 0.01);
+            
+            await updateLocation(deliveryId, randomLat, randomLng, "Simulated Driver");
+        } catch (error) {
+            toast.error("Simulation failed")
+        }
+    }
+
+    // ✅ FEATURE 2: USE REAL BROWSER LOCATION
+    const useBrowserLocation = (deliveryId) => {
+        if (!navigator.geolocation) return toast.error("Geolocation not supported");
+        
+        toast.loading("Getting your location...", { id: "geo" });
+        
+        navigator.geolocation.getCurrentPosition(
+            (position) => {
+                const { latitude, longitude } = position.coords;
+                toast.dismiss("geo");
+                updateLocation(deliveryId, latitude, longitude, "Store Admin Location");
+            },
+            () => {
+                toast.dismiss("geo");
+                toast.error("Unable to retrieve location");
+            }
+        );
+    }
+
+    // Helper function to send update and refresh UI
+    const updateLocation = async (id, lat, lng, source) => {
+        const token = await getToken();
+        
+        // 1. Send to Backend
+        await axios.post(`/api/delivery/${id}`, {
+            status: 'IN_TRANSIT',
+            latitude: lat,
+            longitude: lng,
+            location: source
+        }, { headers: { Authorization: `Bearer ${token}` } });
+
+        // 2. Create new Tracking Object
+        const newTracking = {
+            latitude: lat,
+            longitude: lng,
+            location: source,
+            recordedAt: new Date().toISOString()
+        };
+
+        // 3. Update Local State (So map updates instantly)
+        const updatedOrder = {
+            ...selectedOrder,
+            status: 'IN_TRANSIT',
+            // Prepend new tracking to the existing array
+            deliveryTrackings: [newTracking, ...(selectedOrder.deliveryTrackings || [])]
+        };
+
+        setSelectedOrder(updatedOrder);
+        setOrders(prev => prev.map(o => o.id === id ? updatedOrder : o));
+        
+        toast.success("Location updated successfully");
+    }
  
-    // Without useMemo, these .filter() operations would run every time the component renders 
-    // useMemo caches the result and only recalculates if 'orders' changes.
     const stats = useMemo(() => {
         return {
             total: orders.length,
             delivered: orders.filter(o => o.status === 'DELIVERED').length,
-            processing: orders.filter(o => o.status === 'PROCESSING').length,
-            shipped: orders.filter(o => o.status === 'SHIPPED').length,
+            transit: orders.filter(o => o.status === 'IN_TRANSIT').length,
+            dispatched: orders.filter(o => o.status === 'DISPATCHED').length, 
+            pending: orders.filter(o => o.status === 'PENDING').length,
         }
     }, [orders])
 
     const filteredOrders = orders.filter(order => 
-        order.user?.name?.toLowerCase().includes(searchTerm.toLowerCase())
+        order.goal?.user?.name?.toLowerCase().includes(searchTerm.toLowerCase()) ||
+        order.trackingNumber.toLowerCase().includes(searchTerm.toLowerCase())
     )
 
-    const openModal = (order) => {
-        setSelectedOrder(order)
-        setIsModalOpen(true)
-    }
-
-    const closeModal = () => {
-        setSelectedOrder(null)
-        setIsModalOpen(false)
-    }
+    const openModal = (order) => { setSelectedOrder(order); setIsModalOpen(true); }
+    const closeModal = () => { setSelectedOrder(null); setIsModalOpen(false); }
 
     const getStatusColor = (status) => {
         switch (status) {
             case 'DELIVERED': return 'bg-green-100 text-green-800 border-green-200'
-            case 'SHIPPED': return 'bg-blue-100 text-blue-800 border-blue-200'
-            case 'PROCESSING': return 'bg-yellow-100 text-yellow-800 border-yellow-200'
-            case 'ORDER_PLACED': return 'bg-purple-100 text-purple-800 border-purple-200'
+            case 'IN_TRANSIT': return 'bg-blue-100 text-blue-800 border-blue-200'
+            case 'DISPATCHED': return 'bg-orange-100 text-orange-800 border-orange-200'
+            case 'PENDING': return 'bg-yellow-100 text-yellow-800 border-yellow-200'
             default: return 'bg-gray-100 text-gray-800 border-gray-200'
         }
     }
 
-    const getPaymentColor = (paymentMethod) => {
-        return paymentMethod === 'COD' ? 'bg-red-100 text-red-700 border-red-200' : 'bg-green-100 text-green-700 border-green-200'
-    }
-
-    useEffect(() => {
-        fetchOrders()
-    }, [])
+    useEffect(() => { fetchOrders() }, [])
 
     if (loading) return <Loading />
 
     return (
-        <div className="min-h-screen bg-gradient-to-br from-gray-50 to-gray-100 p-4 sm:p-6">
+        <div className="min-h-screen bg-gray-50 p-4 sm:p-6">
             <div className="max-w-7xl mx-auto">
-                {/* Header */}
-                <div className="mb-8 text-center sm:text-left flex flex-col md:flex-row md:items-end justify-between gap-4">
+                <div className="mb-8 flex flex-col md:flex-row justify-between gap-4">
                     <div>
-                        <h1 className="text-3xl sm:text-4xl font-bold text-gray-900 mb-2">
-                            Dream<span className="text-blue-600">Saver</span>
-                        </h1>
-                        <p className="text-lg text-gray-600">Store Orders Management</p>
+                        <h1 className="text-3xl font-bold text-gray-900">Order<span className="text-blue-600"> Management</span></h1>
                     </div>
-
                     <div className="relative w-full md:w-64">
-                        <Search className="absolute left-3 top-1/2 -translate-y-1/2 text-gray-400 w-4 h-4" />
+                        <Search className="absolute left-3 top-3 text-gray-400 w-4 h-4" />
                         <input 
                             type="text" 
-                            placeholder="Search Customer..." 
+                            placeholder="Search Order or Tracking #" 
                             value={searchTerm}
                             onChange={(e) => setSearchTerm(e.target.value)}
-                            className="w-full pl-10 pr-4 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-blue-500 outline-none transition-all"
+                            className="w-full pl-10 pr-4 py-2 border rounded-lg focus:ring-2 focus:ring-blue-500 outline-none"
                         />
                     </div>
                 </div>
 
-                {/* Stats Cards (Using Memoized Data) */}
-                <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4 mb-8">
-                    <div className="bg-white rounded-xl shadow-sm border border-gray-200 p-4 sm:p-6">
-                        <div className="flex items-center">
-                            <div className="p-3 bg-blue-100 rounded-lg">
-                                <span className="text-blue-600 text-xl">📦</span>
-                            </div>
-                            <div className="ml-4">
-                                <p className="text-sm font-medium text-gray-600">Total Orders</p>
-                                {/* Using memoized stat */}
-                                <p className="text-2xl font-bold text-gray-900">{stats.total}</p>
-                            </div>
-                        </div>
-                    </div>
-                    
-                    <div className="bg-white rounded-xl shadow-sm border border-gray-200 p-4 sm:p-6">
-                        <div className="flex items-center">
-                            <div className="p-3 bg-green-100 rounded-lg">
-                                <span className="text-green-600 text-xl">✅</span>
-                            </div>
-                            <div className="ml-4">
-                                <p className="text-sm font-medium text-gray-600">Delivered</p>
-                                <p className="text-2xl font-bold text-gray-900">{stats.delivered}</p>
+                <div className="grid grid-cols-1 sm:grid-cols-5 gap-4 mb-8">
+                    {[
+                        { label: 'Total Orders', val: stats.total, icon: '📦', color: 'bg-blue-100' },
+                        { label: 'Delivered', val: stats.delivered, icon: '✅', color: 'bg-green-100' },
+                        { label: 'In Transit', val: stats.transit, icon: '🚚', color: 'bg-purple-100' },
+                        { label: 'Dispatched', val: stats.dispatched, icon: '📤', color: 'bg-orange-100' }, 
+                        { label: 'Pending', val: stats.pending, icon: '⏳', color: 'bg-yellow-100' }
+                    ].map((stat, i) => (
+                        <div key={i} className="bg-white p-4 rounded-xl shadow-sm border flex items-center">
+                            <div className={`p-3 rounded-lg ${stat.color} mr-4`}>{stat.icon}</div>
+                            <div>
+                                <p className="text-sm text-gray-500">{stat.label}</p>
+                                <p className="text-2xl font-bold">{stat.val}</p>
                             </div>
                         </div>
-                    </div>
-                    
-                    <div className="bg-white rounded-xl shadow-sm border border-gray-200 p-4 sm:p-6">
-                        <div className="flex items-center">
-                            <div className="p-3 bg-yellow-100 rounded-lg">
-                                <span className="text-yellow-600 text-xl">🔄</span>
-                            </div>
-                            <div className="ml-4">
-                                <p className="text-sm font-medium text-gray-600">Processing</p>
-                                <p className="text-2xl font-bold text-gray-900">{stats.processing}</p>
-                            </div>
-                        </div>
-                    </div>
-                    
-                    <div className="bg-white rounded-xl shadow-sm border border-gray-200 p-4 sm:p-6">
-                        <div className="flex items-center">
-                            <div className="p-3 bg-purple-100 rounded-lg">
-                                <span className="text-purple-600 text-xl">🚚</span>
-                            </div>
-                            <div className="ml-4">
-                                <p className="text-sm font-medium text-gray-600">Shipped</p>
-                                <p className="text-2xl font-bold text-gray-900">{stats.shipped}</p>
-                            </div>
-                        </div>
-                    </div>
+                    ))}
                 </div>
 
-                {/* Orders Table/Cards */}
-                {filteredOrders.length === 0 ? (
-                    <div className="bg-white rounded-2xl shadow-sm border border-gray-200 p-8 text-center">
-                        <div className="w-24 h-24 mx-auto mb-4 bg-gray-100 rounded-full flex items-center justify-center">
-                            <span className="text-3xl">📭</span>
-                        </div>
-                        <h3 className="text-xl font-semibold text-gray-900 mb-2">No Orders Found</h3>
-                        <p className="text-gray-600">
-                            {searchTerm ? `No results for "${searchTerm}"` : "Orders will appear here once customers goals complete."}
-                        </p>
-                    </div>
-                ) : (
-                    <>
-                        {/* Desktop Table */}
-                        <div className="hidden lg:block bg-white rounded-2xl shadow-sm border border-gray-200 overflow-hidden">
-                            <div className="overflow-x-auto">
-                                <table className="w-full">
-                                    <thead className="bg-gradient-to-r from-gray-50 to-gray-100 border-b border-gray-200">
-                                        <tr>
-                                            {["Order No.", "Customer", "Total", "Payment", "Coupon", "Status", "Date", "Actions"].map((heading, i) => (
-                                                <th key={i} className="px-6 py-4 text-left text-xs font-semibold text-gray-700 uppercase tracking-wider">
-                                                    {heading}
-                                                </th>
-                                            ))}
-                                        </tr>
-                                    </thead>
-                                    <tbody className="divide-y divide-gray-200">
-                                        {/* Using filteredOrders here */}
-                                        {filteredOrders.map((order, index) => (
-                                            <tr
-                                                key={order.id}
-                                                className="hover:bg-gray-50 transition-all duration-200 cursor-pointer group"
-                                                onClick={() => openModal(order)}
-                                            >
-                                                <td className="px-6 py-4 whitespace-nowrap">
-                                                    <div className="text-sm font-medium text-blue-600">#{index + 1}</div>
-                                                </td>
-                                                <td className="px-6 py-4 whitespace-nowrap">
-                                                    <div className="text-sm font-medium text-gray-900">{order.user?.name}</div>
-                                                    <div className="text-sm text-gray-500">{order.user?.email}</div>
-                                                </td>
-                                                <td className="px-6 py-4 whitespace-nowrap">
-                                                    <div className="text-sm font-bold text-gray-900">${order.total}</div>
-                                                </td>
-                                                <td className="px-6 py-4 whitespace-nowrap">
-                                                    {order.paymentMethod !== 'COD' && (
-                                                        <span className={`inline-flex items-center px-3 py-1 rounded-full text-xs font-medium border ${getPaymentColor(order.paymentMethod)}`}>
-                                                            {order.paymentMethod}
-                                                        </span>
-                                                    )}
-                                                </td>
-                                                <td className="px-6 py-4 whitespace-nowrap">
-                                                    {order.isCouponUsed ? (
-                                                        <span className="inline-flex items-center px-3 py-1 bg-gradient-to-r from-green-100 to-emerald-100 text-green-700 text-xs font-medium rounded-full border border-green-200">
-                                                            {order.coupon?.code}
-                                                        </span>
-                                                    ) : (
-                                                        <span className="text-gray-400">—</span>
-                                                    )}
-                                                </td>
-                                                <td className="px-6 py-4 whitespace-nowrap" onClick={(e) => e.stopPropagation()}>
-                                                    {/* topPropagation()
-                                                        We use this because the <tr> has an onClick event to open the modal.
-                                                        If we click this dropdown, the event would bubble up and open the modal,
-                                                        which is annoying. This stops that behavior.
-                                                    */}
-                                                    <select
-                                                        value={order.status}
-                                                        onChange={e => updateOrderStatus(order.id, e.target.value)}
-                                                        className={`border-0 rounded-full text-sm font-medium px-3 py-2 focus:ring-2 focus:ring-blue-500 transition-all ${getStatusColor(order.status)}`}
-                                                    >
-                                                        <option value="ORDER_PLACED">Order Placed</option>
-                                                        <option value="PROCESSING">Processing</option>
-                                                        <option value="SHIPPED">Shipped</option>
-                                                        <option value="DELIVERED">Delivered</option>
-                                                    </select>
-                                                </td>
-                                                <td className="px-6 py-4 whitespace-nowrap">
-                                                    <div className="text-sm text-gray-900">
-                                                        {new Date(order.createdAt).toLocaleDateString()}
-                                                    </div>
-                                                    <div className="text-sm text-gray-500">
-                                                        {new Date(order.createdAt).toLocaleTimeString()}
-                                                    </div>
-                                                </td>
-                                                <td className="px-6 py-4 whitespace-nowrap text-right text-sm font-medium">
-                                                    <button
-                                                        onClick={(e) => {
-                                                            e.stopPropagation()
-                                                            openModal(order)
-                                                        }}
-                                                        className="text-blue-600 hover:text-blue-900 font-medium transition-colors"
-                                                    >
-                                                        View Details
-                                                    </button>
-                                                </td>
-                                            </tr>
-                                        ))}
-                                    </tbody>
-                                </table>
-                            </div>
-                        </div>
-
-                        {/* Mobile Cards */}
-                        <div className="lg:hidden space-y-4">
-                            {filteredOrders.map((order, index) => (
-                                <div
-                                    key={order.id}
-                                    className="bg-white rounded-2xl shadow-sm border border-gray-200 p-6 hover:shadow-md transition-all duration-200 cursor-pointer"
-                                    onClick={() => openModal(order)}
-                                >
-                                    <div className="flex justify-between items-start mb-4">
-                                        <div>
-                                            <div className="flex items-center space-x-2 mb-2">
-                                                <span className="text-lg font-bold text-blue-600">#{index + 1}</span>
-                                                <span className={`px-3 py-1 rounded-full text-xs font-medium border ${getStatusColor(order.status)}`}>
-                                                    {order.status.replace('_', ' ')}
-                                                </span>
-                                            </div>
-                                            <h3 className="text-lg font-semibold text-gray-900">{order.user?.name}</h3>
-                                            <p className="text-sm text-gray-600">{order.user?.email}</p>
-                                        </div>
-                                        <div className="text-right">
-                                            <div className="text-xl font-bold text-gray-900">${order.total}</div>
-                                            {order.paymentMethod !== 'COD' && (
-                                                <span className={`inline-block mt-1 px-2 py-1 rounded-full text-xs font-medium border ${getPaymentColor(order.paymentMethod)}`}>
-                                                    {order.paymentMethod}
-                                                </span>
+                <div className="bg-white rounded-2xl shadow-sm border border-gray-200 overflow-hidden">
+                    <table className="w-full">
+                        <thead className="bg-gray-50 border-b">
+                            <tr>
+                                {["Tracking #", "Customer", "Product", "Scheduled Date", "Status", "Actions"].map((h, i) => (
+                                    <th key={i} className="px-6 py-4 text-left text-xs font-semibold text-gray-500 uppercase">{h}</th>
+                                ))}
+                            </tr>
+                        </thead>
+                        <tbody className="divide-y">
+                            {filteredOrders.map((order) => (
+                                <tr key={order.id} onClick={() => openModal(order)} className="hover:bg-gray-50 cursor-pointer transition-colors">
+                                    <td className="px-6 py-4 font-mono text-sm text-blue-600">{order.trackingNumber}</td>
+                                    <td className="px-6 py-4">
+                                        <div className="text-sm font-medium text-gray-900">{order.goal?.user?.name || "User"}</div>
+                                        <div className="text-xs text-gray-500">{order.goal?.user?.email}</div>
+                                    </td>
+                                    <td className="px-6 py-4">
+                                        <div className="flex items-center gap-2">
+                                            {order.goal?.product?.images?.[0] && (
+                                                <img src={order.goal.product.images[0]} className="w-8 h-8 rounded object-cover border" />
                                             )}
+                                            <span className="text-sm text-gray-700">{order.goal?.product?.name}</span>
                                         </div>
-                                    </div>
-
-                                    <div className="grid grid-cols-2 gap-4 mb-4 text-sm">
-                                        <div>
-                                            <span className="text-gray-500">Date:</span>
-                                            <div className="font-medium text-gray-900">
-                                                {new Date(order.createdAt).toLocaleDateString()}
-                                            </div>
-                                        </div>
-                                        <div>
-                                            <span className="text-gray-500">Coupon:</span>
-                                            <div className="font-medium text-gray-900">
-                                                {order.isCouponUsed ? order.coupon?.code : '—'}
-                                            </div>
-                                        </div>
-                                    </div>
-
-                                    <div className="flex justify-between items-center pt-4 border-t border-gray-200">
-                                        <select
-                                            value={order.status}
-                                            onChange={e => updateOrderStatus(order.id, e.target.value)}
+                                    </td>
+                                    <td className="px-6 py-4 text-sm text-gray-600">
+                                        {new Date(order.estimatedDate).toDateString()}
+                                    </td>
+                                    <td className="px-6 py-4">
+                                        <select 
+                                            value={order.status} 
                                             onClick={(e) => e.stopPropagation()}
-                                            className={`border-0 rounded-full text-sm font-medium px-3 py-2 focus:ring-2 focus:ring-blue-500 transition-all ${getStatusColor(order.status)}`}
+                                            onChange={(e) => updateOrderStatus(order.id, e.target.value)}
+                                            className={`text-xs font-bold px-2 py-1 rounded-full border-0 ${getStatusColor(order.status)}`}
                                         >
-                                            <option value="ORDER_PLACED">Order Placed</option>
-                                            <option value="PROCESSING">Processing</option>
-                                            <option value="SHIPPED">Shipped</option>
+                                            <option value="PENDING">Pending</option>
+                                            <option value="DISPATCHED">Dispatched</option>
+                                            <option value="IN_TRANSIT">In Transit</option>
                                             <option value="DELIVERED">Delivered</option>
                                         </select>
-                                        <button
-                                            onClick={(e) => {
-                                                e.stopPropagation()
-                                                openModal(order)
-                                            }}
-                                            className="text-blue-600 hover:text-blue-800 font-medium text-sm transition-colors"
-                                        >
-                                            View Details
-                                        </button>
-                                    </div>
-                                </div>
+                                    </td>
+                                    <td className="px-6 py-4">
+                                        <button className="text-blue-600 hover:text-blue-800 text-sm font-medium">View Details</button>
+                                    </td>
+                                </tr>
                             ))}
-                        </div>
-                    </>
-                )}
+                        </tbody>
+                    </table>
+                    {filteredOrders.length === 0 && <div className="p-10 text-center text-gray-500">No orders found.</div>}
+                </div>
 
-                {/* Modal */}
                 {isModalOpen && selectedOrder && (
-                    <div
-                        onClick={closeModal}
-                        className="fixed inset-0 flex items-center justify-center bg-black/50 backdrop-blur-sm z-50 p-4"
-                    >
-                        <div
-                            onClick={e => e.stopPropagation()}
-                            className="bg-white rounded-2xl shadow-2xl max-w-2xl w-full max-h-[90vh] overflow-y-auto"
-                        >
-                            {/* Modal Header */}
-                            <div className="bg-gradient-to-r from-blue-600 to-blue-700 p-6 rounded-t-2xl">
-                                <div className="flex justify-between items-start">
-                                    <div>
-                                        <h2 className="text-2xl font-bold text-white mb-1">
-                                            Order Details
-                                        </h2>
-                                        <p className="text-blue-100">Order #{orders.findIndex(o => o.id === selectedOrder.id) + 1}</p>
+                    <div className="fixed inset-0 bg-black/50 flex items-center justify-center z-50 p-4 backdrop-blur-sm" onClick={closeModal}>
+                        <div className="bg-white rounded-2xl w-full max-w-4xl max-h-[90vh] overflow-hidden flex flex-col md:flex-row" onClick={e => e.stopPropagation()}>
+                            <div className="w-full md:w-1/2 p-6 overflow-y-auto">
+                                <h2 className="text-xl font-bold mb-1">Order Details</h2>
+                                <p className="text-xs text-gray-400 font-mono mb-6">ID: {selectedOrder.id}</p>
+                                <div className="space-y-6">
+                                    <div className="bg-gray-50 p-4 rounded-xl">
+                                        <h3 className="font-bold text-sm text-gray-700 mb-2">Shipping Address</h3>
+                                        <div className="flex gap-2 text-sm text-gray-600">
+                                            <MapPin size={16} className="shrink-0 mt-0.5" />
+                                            {selectedOrder.shippingAddress}
+                                        </div>
                                     </div>
-                                    <button
-                                        onClick={closeModal}
-                                        className="text-white hover:text-blue-200 transition-colors text-2xl"
-                                    >
-                                        ×
-                                    </button>
+                                    <div>
+                                        <h3 className="font-bold text-sm text-gray-700 mb-2">Product</h3>
+                                        <div className="flex gap-4 border rounded-xl p-3">
+                                            {selectedOrder.goal?.product?.images?.[0] && (
+                                                <img src={selectedOrder.goal.product.images[0]} className="w-16 h-16 rounded-lg object-cover" />
+                                            )}
+                                            <div>
+                                                <p className="font-semibold text-sm">{selectedOrder.goal?.product?.name}</p>
+                                                <p className="text-xs text-gray-500">Store: {selectedOrder.goal?.product?.store?.name}</p>
+                                            </div>
+                                        </div>
+                                    </div>
+                                    
+                                    {/* ✅ DRIVER UPDATE CONTROLS */}
+                                    <div className="border-t pt-4">
+                                        <h3 className="font-bold text-sm text-gray-700 mb-3">Update Location</h3>
+                                        
+                                        <div className="grid grid-cols-2 gap-3">
+                                            {/* Button 1: Simulate Random */}
+                                            <button 
+                                                onClick={() => simulateDriverUpdate(selectedOrder.id)}
+                                                className="w-full py-2.5 bg-indigo-50 text-indigo-700 rounded-lg text-sm font-bold hover:bg-indigo-100 flex justify-center items-center gap-2 border border-indigo-200"
+                                            >
+                                                <Truck size={16} /> Random Sim
+                                            </button>
+
+                                            {/* Button 2: Use Real Location */}
+                                            <button 
+                                                onClick={() => useBrowserLocation(selectedOrder.id)}
+                                                className="w-full py-2.5 bg-green-50 text-green-700 rounded-lg text-sm font-bold hover:bg-green-100 flex justify-center items-center gap-2 border border-green-200"
+                                            >
+                                                <Crosshair size={16} /> Use My GPS
+                                            </button>
+                                        </div>
+                                        <p className="text-[10px] text-gray-400 mt-2 text-center">
+                                            Updates the map instantly for both you and the customer.
+                                        </p>
+                                    </div>
                                 </div>
                             </div>
-
-                            <div className="p-6 space-y-6">
-                                {/* Customer Details */}
-                                <div className="bg-gray-50 rounded-xl p-4">
-                                    <h3 className="text-lg font-semibold text-gray-900 mb-3 flex items-center">
-                                        <span className="w-2 h-2 bg-blue-600 rounded-full mr-2"></span>
-                                        Customer Information
-                                    </h3>
-                                    <div className="grid grid-cols-1 sm:grid-cols-2 gap-3 text-sm">
-                                        <div>
-                                            <span className="text-gray-600">Name:</span>
-                                            <p className="font-medium text-gray-900">{selectedOrder.user?.name}</p>
-                                        </div>
-                                        <div>
-                                            <span className="text-gray-600">Email:</span>
-                                            <p className="font-medium text-gray-900">{selectedOrder.user?.email}</p>
-                                        </div>
-                                        <div>
-                                            <span className="text-gray-600">Phone:</span>
-                                            <p className="font-medium text-gray-900">{selectedOrder.address?.phone || 'N/A'}</p>
-                                        </div>
-                                        <div className="sm:col-span-2">
-                                            <span className="text-gray-600">Address:</span>
-                                            <p className="font-medium text-gray-900">
-                                                {selectedOrder.address ? 
-                                                    `${selectedOrder.address.street}, ${selectedOrder.address.city}, ${selectedOrder.address.state} ${selectedOrder.address.zip}, ${selectedOrder.address.country}`
-                                                    : 'N/A'
-                                                }
-                                            </p>
-                                        </div>
-                                    </div>
-                                </div>
-
-                                {/* Products */}
-                                <div>
-                                    <h3 className="text-lg font-semibold text-gray-900 mb-3 flex items-center">
-                                        <span className="w-2 h-2 bg-green-600 rounded-full mr-2"></span>
-                                        Order Items
-                                    </h3>
-                                    <div className="space-y-3">
-                                        {selectedOrder.orderItems.map((item, i) => (
-                                            <div key={i} className="flex items-center gap-4 bg-white border border-gray-200 rounded-xl p-4 hover:shadow-sm transition-shadow">
-                                                <div className="relative w-16 h-16 rounded-lg overflow-hidden border border-gray-100 flex-shrink-0">
-                                                    <Image
-                                                        src={item.product.images?.[0] || '/api/placeholder/80/80'} // Fallback logic
-                                                        alt={item.product?.name || "Product Image"}
-                                                        fill // Automatically fills parent container
-                                                        sizes="64px"
-                                                        className="object-cover"
-                                                    />
-                                                </div>
-                                                <div className="flex-1 min-w-0">
-                                                    <p className="font-medium text-gray-900 truncate">{item.product?.name}</p>
-                                                    <div className="flex items-center space-x-4 mt-1 text-sm text-gray-600">
-                                                        <span>Qty: {item.quantity}</span>
-                                                        <span>Price: ${item.price}</span>
-                                                        <span className="font-semibold text-gray-900">
-                                                            Total: ${(item.quantity * item.price).toFixed(2)}
-                                                        </span>
-                                                    </div>
-                                                </div>
-                                            </div>
-                                        ))}
-                                    </div>
-                                </div>
-
-                                {/* Order Summary */}
-                                <div className="bg-gradient-to-br from-gray-50 to-gray-100 rounded-xl p-4 border border-gray-200">
-                                    <h3 className="text-lg font-semibold text-gray-900 mb-3 flex items-center">
-                                        <span className="w-2 h-2 bg-purple-600 rounded-full mr-2"></span>
-                                        Order Summary
-                                    </h3>
-                                    <div className="grid grid-cols-1 sm:grid-cols-2 gap-4 text-sm">
-                                        <div className="space-y-2">
-                                            <div className="flex justify-between">
-                                                <span className="text-gray-600">Payment Method:</span>
-                                                <span className="font-medium text-gray-900">
-                                                    {selectedOrder.paymentMethod !== 'COD' ? selectedOrder.paymentMethod : 'N/A'}
-                                                </span>
-                                            </div>
-                                            <div className="flex justify-between">
-                                                <span className="text-gray-600">Payment Status:</span>
-                                                <span className={`font-medium ${selectedOrder.isPaid ? 'text-green-600' : 'text-red-600'}`}>
-                                                    {selectedOrder.isPaid ? 'Paid' : 'Pending'}
-                                                </span>
-                                            </div>
-                                        </div>
-                                        <div className="space-y-2">
-                                            <div className="flex justify-between">
-                                                <span className="text-gray-600">Coupon Used:</span>
-                                                <span className="font-medium text-gray-900">
-                                                    {selectedOrder.isCouponUsed ? 
-                                                        `${selectedOrder.coupon.code} (${selectedOrder.coupon.discount}% off)` 
-                                                        : 'None'
-                                                    }
-                                                </span>
-                                            </div>
-                                            <div className="flex justify-between">
-                                                <span className="text-gray-600">Order Date:</span>
-                                                <span className="font-medium text-gray-900">
-                                                    {new Date(selectedOrder.createdAt).toLocaleString()}
-                                                </span>
-                                            </div>
-                                        </div>
-                                    </div>
-                                    <div className="mt-4 pt-4 border-t border-gray-300">
-                                        <div className="flex justify-between items-center text-lg">
-                                            <span className="font-semibold text-gray-900">Grand Total:</span>
-                                            <span className="text-2xl font-bold text-blue-600">${selectedOrder.total}</span>
-                                        </div>
-                                    </div>
-                                </div>
+                            <div className="w-full md:w-1/2 bg-gray-100 border-l relative min-h-[300px]">
+                                <DeliveryMap delivery={selectedOrder} />
+                                <button onClick={closeModal} className="absolute top-4 right-4 bg-white p-2 rounded-full shadow-md z-[1000]">✕</button>
                             </div>
                         </div>
                     </div>

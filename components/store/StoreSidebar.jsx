@@ -9,6 +9,7 @@ import {
   LayoutListIcon, 
   SquarePenIcon, 
   SquarePlusIcon, 
+  Settings,
   Menu, 
   X,
   Store
@@ -32,6 +33,7 @@ const StoreSidebar = ({ storeInfo }) => {
     { name: 'Add Product', href: '/store/add-product', icon: SquarePlusIcon },
     { name: 'Manage Product', href: '/store/manage-product', icon: SquarePenIcon },
     { name: 'Orders', href: '/store/orders', icon: LayoutListIcon },
+    { name: 'Location Settings', href: '/store/store-settings', icon: Settings },
   ]
 
   return (

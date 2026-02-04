@@ -1,24 +1,21 @@
-'use client' // Marks this as a Client Component in Next.js (App Router)
+'use client'
 
-// Importing required icons, hooks, and libraries
-import { XIcon } from "lucide-react"
+import { XIcon, Crosshair, MapPin, Loader2 } from "lucide-react"
 import { useState } from "react"
 import { toast } from "react-hot-toast"
 import { useDispatch } from "react-redux"
 import { useAuth } from "@clerk/nextjs"
 import axios from "axios"
-import { addAddress } from "@/lib/features/address/addressSlice"
+import { addAddress } from "@/lib/features/address/addressSlice" 
 
-// Address Modal Component
 const AddressModal = ({ setShowAddressModal }) => {
 
-    // Get authentication token from Clerk
     const { getToken } = useAuth()
-
-    // Redux dispatcher to update global state
     const dispatch = useDispatch()
+    
+    // Loading state for the GPS button
+    const [loadingLocation, setLoadingLocation] = useState(false)
 
-    // Local state to store address form data
     const [address, setAddress] = useState({
         name: '',
         email: '',
@@ -27,70 +24,108 @@ const AddressModal = ({ setShowAddressModal }) => {
         state: '',
         zip: '',
         country: '',
-        phone: ''
+        phone: '',
+        latitude: null,
+        longitude: null
     })
 
-    // Handle input changes dynamically using input "name"
     const handleAddressChange = (e) => {
-        setAddress({
-            ...address,
-            [e.target.name]: e.target.value // Update specific field
-        })
+        setAddress({ ...address, [e.target.name]: e.target.value })
     }
 
-    // Handle form submission
+    // ✅ FEATURE 1: Get Real GPS Location
+    const handleUseGPS = () => {
+        if (!navigator.geolocation) return toast.error("Geolocation not supported")
+        
+        setLoadingLocation(true)
+        toast.loading("Getting your location...", { id: "geo" })
+        
+        navigator.geolocation.getCurrentPosition(
+            async (pos) => {
+                const { latitude, longitude } = pos.coords
+                
+                try {
+                    // Optional: Reverse Geocode (Fill text from Coords)
+                    const res = await axios.get(`https://nominatim.openstreetmap.org/reverse?format=json&lat=${latitude}&lon=${longitude}`)
+                    const data = res.data.address
+                    
+                    setAddress(prev => ({
+                        ...prev,
+                        latitude,
+                        longitude,
+                        street: data.road || data.suburb || prev.street,
+                        city: data.city || data.town || prev.city,
+                        state: data.state || prev.state,
+                        zip: data.postcode || prev.zip,
+                        country: data.country || prev.country
+                    }))
+                    toast.success("Location found!", { id: "geo" })
+                } catch (e) {
+                    // If lookup fails, still save coords
+                    setAddress(prev => ({ ...prev, latitude, longitude }))
+                    toast.success("Coordinates captured!", { id: "geo" })
+                } finally {
+                    setLoadingLocation(false)
+                }
+            },
+            () => {
+                toast.error("Location permission denied", { id: "geo" })
+                setLoadingLocation(false)
+            }
+        )
+    }
+
     const handleSubmit = async (e) => {
-        e.preventDefault() // Prevent page reload
+        e.preventDefault()
 
         try {
-            // Get JWT token from Clerk
             const token = await getToken()
+            let finalAddress = { ...address }
 
-            // Send address data to backend API
+            // ✅ FEATURE 2: Auto-Geocode if GPS wasn't used
+            if (!finalAddress.latitude) {
+                try {
+                    const query = `${finalAddress.street}, ${finalAddress.city}, ${finalAddress.state}, ${finalAddress.country}`
+                    const res = await axios.get(`https://nominatim.openstreetmap.org/search?format=json&q=${encodeURIComponent(query)}`)
+                    
+                    if (res.data && res.data.length > 0) {
+                        finalAddress.latitude = parseFloat(res.data[0].lat)
+                        finalAddress.longitude = parseFloat(res.data[0].lon)
+                    }
+                } catch (error) {
+                    console.warn("Could not auto-geocode address")
+                }
+            }
+
+            // Send to Backend
             const { data } = await axios.post(
                 '/api/address',
-                { address },
+                { address: finalAddress }, // Nested structure matches your API
                 {
-                    headers: {
-                        Authorization: `Bearer ${token}` // Secure request
-                    }
+                    headers: { Authorization: `Bearer ${token}` }
                 }
             )
 
-            // Save address in Redux store
+            // Update Redux
             dispatch(addAddress(data.newAddress))
-
-            // Show success toast
+            
             toast.success(data.message || 'Address added successfully!')
-
-            // Close modal after success
             setShowAddressModal(false)
 
         } catch (error) {
-            // Log error for debugging
             console.error(error)
-
-            // Show error toast
-            toast.error(error?.response?.data?.message || error.message)
+            // ✅ FIX: Check for 'error' key from API response, then 'message', then default
+            const errorMsg = error?.response?.data?.error || error?.response?.data?.message || error.message
+            toast.error(errorMsg)
         }
     }
 
     return (
-        // Modal overlay with blur background
         <div className="fixed inset-0 z-50 bg-black/40 backdrop-blur-sm flex items-center justify-center px-4 sm:px-0">
-
-            {/* Form container */}
             <form
-                // Show loading toast while address is being added
-                onSubmit={(e) =>
-                    toast.promise(handleSubmit(e), {
-                        loading: 'Adding Address...'
-                    })
-                }
-                className="relative bg-white rounded-2xl shadow-2xl w-full max-w-lg p-6 sm:p-8 animate-fadeIn"
+                onSubmit={(e) => toast.promise(handleSubmit(e), { loading: 'Saving Address...' })}
+                className="relative bg-white rounded-2xl shadow-2xl w-full max-w-lg p-6 sm:p-8 animate-fadeIn max-h-[90vh] overflow-y-auto custom-scrollbar"
             >
-
-                {/* Close button */}
                 <button
                     type="button"
                     onClick={() => setShowAddressModal(false)}
@@ -99,106 +134,59 @@ const AddressModal = ({ setShowAddressModal }) => {
                     <XIcon size={28} />
                 </button>
 
-                {/* Modal Heading */}
                 <h2 className="text-2xl sm:text-3xl font-bold text-center text-blue-700 mb-6">
                     Add New <span className="text-slate-800">Address</span>
                 </h2>
 
-                {/* Input fields */}
-                <div className="flex flex-col gap-4">
-
-                    {/* Full Name */}
-                    <input
-                        name="name"
-                        value={address.name}
-                        onChange={handleAddressChange}
-                        type="text"
-                        placeholder="Enter your full name"
-                        required
-                        className="p-3 border border-slate-200 rounded-lg focus:ring-2 focus:ring-blue-500 outline-none transition"
-                    />
-
-                    {/* Email */}
-                    <input
-                        name="email"
-                        value={address.email}
-                        onChange={handleAddressChange}
-                        type="email"
-                        placeholder="Email address"
-                        required
-                        className="p-3 border border-slate-200 rounded-lg focus:ring-2 focus:ring-blue-500 outline-none transition"
-                    />
-
-                    {/* Street Address */}
-                    <input
-                        name="street"
-                        value={address.street}
-                        onChange={handleAddressChange}
-                        type="text"
-                        placeholder="Street / Apartment / Building"
-                        required
-                        className="p-3 border border-slate-200 rounded-lg focus:ring-2 focus:ring-blue-500 outline-none transition"
-                    />
-
-                    {/* City & State */}
-                    <div className="flex flex-col sm:flex-row gap-4">
-                        <input
-                            name="city"
-                            value={address.city}
-                            onChange={handleAddressChange}
-                            type="text"
-                            placeholder="City"
-                            required
-                            className="p-3 border border-slate-200 rounded-lg focus:ring-2 focus:ring-blue-500 outline-none transition"
-                        />
-
-                        <input
-                            name="state"
-                            value={address.state}
-                            onChange={handleAddressChange}
-                            type="text"
-                            placeholder="State / Province"
-                            required
-                            className="p-3 border border-slate-200 rounded-lg focus:ring-2 focus:ring-blue-500 outline-none transition"
-                        />
+                {/* GPS Section */}
+                <div className="mb-6">
+                    <button 
+                        type="button"
+                        onClick={handleUseGPS}
+                        disabled={loadingLocation}
+                        className="w-full py-3 bg-blue-50 hover:bg-blue-100 text-blue-700 font-semibold rounded-xl flex items-center justify-center gap-2 border border-blue-200 transition-colors disabled:opacity-70"
+                    >
+                        {loadingLocation ? <Loader2 className="animate-spin" size={18}/> : <Crosshair size={18} />}
+                        {loadingLocation ? "Locating..." : "Use Current Location (Recommended)"}
+                    </button>
+                    
+                    <div className="relative text-center mt-4 mb-2">
+                        <div className="absolute inset-0 flex items-center">
+                            <div className="w-full border-t border-gray-200"></div>
+                        </div>
+                        <span className="relative bg-white px-2 text-xs text-gray-400 uppercase">Or fill manually</span>
                     </div>
-
-                    {/* Zip Code & Country */}
-                    <div className="flex flex-col sm:flex-row gap-4">
-                        <input
-                            name="zip"
-                            value={address.zip}
-                            onChange={handleAddressChange}
-                            type="number"
-                            placeholder="Zip Code"
-                            required
-                            className="p-3 border border-slate-200 rounded-lg focus:ring-2 focus:ring-blue-500 outline-none transition"
-                        />
-
-                        <input
-                            name="country"
-                            value={address.country}
-                            onChange={handleAddressChange}
-                            type="text"
-                            placeholder="Country"
-                            required
-                            className="p-3 border border-slate-200 rounded-lg focus:ring-2 focus:ring-blue-500 outline-none transition"
-                        />
-                    </div>
-
-                    {/* Phone Number */}
-                    <input
-                        name="phone"
-                        value={address.phone}
-                        onChange={handleAddressChange}
-                        type="text"
-                        placeholder="Phone Number"
-                        required
-                        className="p-3 border border-slate-200 rounded-lg focus:ring-2 focus:ring-blue-500 outline-none transition"
-                    />
                 </div>
 
-                {/* Submit Button */}
+                {/* Inputs */}
+                <div className="flex flex-col gap-4">
+                    <input name="name" value={address.name} onChange={handleAddressChange} type="text" placeholder="Enter your full name" required className="p-3 border border-slate-200 rounded-lg focus:ring-2 focus:ring-blue-500 outline-none transition" />
+                    <input name="email" value={address.email} onChange={handleAddressChange} type="email" placeholder="Email address" required className="p-3 border border-slate-200 rounded-lg focus:ring-2 focus:ring-blue-500 outline-none transition" />
+                    <input name="street" value={address.street} onChange={handleAddressChange} type="text" placeholder="Street / Apartment / Building" required className="p-3 border border-slate-200 rounded-lg focus:ring-2 focus:ring-blue-500 outline-none transition" />
+                    
+                    <div className="flex flex-col sm:flex-row gap-4">
+                        <input name="city" value={address.city} onChange={handleAddressChange} type="text" placeholder="City" required className="p-3 border border-slate-200 rounded-lg focus:ring-2 focus:ring-blue-500 outline-none transition" />
+                        <input name="state" value={address.state} onChange={handleAddressChange} type="text" placeholder="State / Province" required className="p-3 border border-slate-200 rounded-lg focus:ring-2 focus:ring-blue-500 outline-none transition" />
+                    </div>
+
+                    <div className="flex flex-col sm:flex-row gap-4">
+                        <input name="zip" value={address.zip} onChange={handleAddressChange} type="number" placeholder="Zip Code" required className="p-3 border border-slate-200 rounded-lg focus:ring-2 focus:ring-blue-500 outline-none transition" />
+                        <input name="country" value={address.country} onChange={handleAddressChange} type="text" placeholder="Country" required className="p-3 border border-slate-200 rounded-lg focus:ring-2 focus:ring-blue-500 outline-none transition" />
+                    </div>
+
+                    <input name="phone" value={address.phone} onChange={handleAddressChange} type="text" placeholder="Phone Number" required className="p-3 border border-slate-200 rounded-lg focus:ring-2 focus:ring-blue-500 outline-none transition" />
+                </div>
+
+                {/* Coords Indicator */}
+                <div className="mt-3 flex items-center gap-1.5 text-xs">
+                    <MapPin size={14} className={address.latitude ? "text-green-600" : "text-gray-400"} />
+                    {address.latitude ? (
+                        <span className="text-green-600 font-medium">GPS Coordinates Captured</span>
+                    ) : (
+                        <span className="text-gray-400">Coordinates will be auto-detected on save</span>
+                    )}
+                </div>
+
                 <button
                     type="submit"
                     className="mt-6 w-full bg-blue-600 text-white py-3 rounded-lg font-semibold hover:bg-blue-700 active:scale-95 shadow-md transition-all"
@@ -206,7 +194,6 @@ const AddressModal = ({ setShowAddressModal }) => {
                     SAVE ADDRESS
                 </button>
 
-                {/* Footer Branding */}
                 <p className="text-center text-xs sm:text-sm text-slate-400 mt-4">
                     Powered by <span className="font-semibold text-blue-700">DreamSaver</span>
                 </p>
