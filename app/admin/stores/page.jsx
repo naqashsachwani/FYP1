@@ -117,7 +117,7 @@ export default function AdminStores() {
             const token = await getToken()
             
             //Background API Call
-            await axios.patch('/api/admin/update-store', { 
+            await axios.post('/api/admin/toggle-store', { 
                 storeId: selectedStore.id,
                 name: editFormData.name,
                 isActive: editFormData.isActive
