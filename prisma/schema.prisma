@@ -337,12 +337,20 @@ model Delivery {
   status          DeliveryStatus @default(PENDING)
   trackingNumber  String?
   carrier         String?
+  
+  // --- Customer Location (Static) ---
   shippingAddress String?
-  coordinates     String?
-  destinationLat  Float?
-  destinationLng  Float?
+  coordinates     String?        // Legacy field (optional to keep)
+  destinationLat  Float?         // Where the package is going
+  destinationLng  Float?         // Where the package is going
+
+  // --- ✅ NEW: Driver Location (Dynamic) ---
+  latitude        Float?         // Driver's current Latitude
+  longitude       Float?         // Driver's current Longitude
+  location        String?        // e.g. "Driver En Route" or "Simulated Driver"
+
   // Relations
-  goal              Goal               @relation(fields: [goalId], references: [id], onDelete: Cascade)
+  goal              Goal             @relation(fields: [goalId], references: [id], onDelete: Cascade)
   notifications     Notification[]
   deliveryTrackings DeliveryTracking[]
 

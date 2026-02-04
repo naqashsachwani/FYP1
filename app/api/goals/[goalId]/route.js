@@ -3,8 +3,7 @@ import { getAuth } from "@clerk/nextjs/server";         // Clerk server-side aut
 import { NextResponse } from "next/server";             // Next.js server response
 import crypto from "crypto";                             // For generating unique receipt numbers
 
-// -------------------- Helper: Normalize Prisma Decimals --------------------
-// Converts Prisma Decimal objects to Numbers for safe JSON serialization
+// Helper: Normalize Prisma Decimals
 const normalize = (obj) => JSON.parse(
   JSON.stringify(obj, (key, value) => 
     (typeof value === 'object' && value !== null && value.type === 'Decimal') 
@@ -18,22 +17,21 @@ export async function GET(req, { params }) {
   const { goalId } = await params; 
   const { userId } = getAuth(req);
 
-  // Deny if not authenticated
   if (!userId) return NextResponse.json({ error: "Unauthenticated" }, { status: 401 });
   
   try {
-    // Fetch goal including its deposits and related product
     const goal = await prisma.goal.findUnique({
       where: { id: goalId },
       include: { 
         deposits: { orderBy: { createdAt: 'desc' } }, 
-        product: true 
+        product: { include: { store: true } }, // Include store details if needed
+        // ✅ CRITICAL FIX: Include delivery info so frontend knows it's redeemed
+        delivery: true 
       },
     });
 
     if (!goal) return NextResponse.json({ error: "Goal not found" }, { status: 404 });
 
-    // Calculate progress as percentage
     const saved = Number(goal.saved);
     const target = Number(goal.targetAmount);
     const progressPercent = target > 0 ? (saved / target) * 100 : 0;
@@ -42,6 +40,7 @@ export async function GET(req, { params }) {
       goal: normalize({ ...goal, progressPercent }) 
     });
   } catch (error) {
+    console.error("GET Error:", error);
     return NextResponse.json({ error: "Server Error" }, { status: 500 });
   }
 }

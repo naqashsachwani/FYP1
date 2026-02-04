@@ -29,9 +29,9 @@ export default function TrackingPage({ params }) {
   useEffect(() => {
     if (!id) return;
     fetchData(); 
-    // ❌ REMOVED: The automatic 5-second interval
-    // const interval = setInterval(fetchData, 5000); 
-    // return () => clearInterval(interval);
+    
+    // ❌ REMOVED: Auto-polling interval. 
+    // The page will NOT auto-refresh. 
   }, [id]);
 
   // --- USER ACTION: Confirm Delivery ---
@@ -44,20 +44,18 @@ export default function TrackingPage({ params }) {
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ status: 'DELIVERED' })
       });
-      await fetchData(); // Refresh UI
+      await fetchData(); 
     } catch (error) { alert("Failed to confirm"); } 
     finally { setUpdating(false); }
   };
 
-  // --- DEV TOOL: Smart Simulate Truck Movement ---
+  // --- DEV TOOL: Simulate Driver Movement ---
   const simulateMovement = async () => {
     setUpdating(true);
     
-    // Smart Start Point: Use Store location (or default to Karachi)
     const storeLat = delivery?.goal?.product?.store?.latitude || 24.8607;
     const storeLng = delivery?.goal?.product?.store?.longitude || 67.0011;
 
-    // Move driver to a random spot near the store
     const randomLat = storeLat + (Math.random() * 0.01 - 0.005); 
     const randomLng = storeLng + (Math.random() * 0.01 - 0.005);
     
@@ -67,13 +65,13 @@ export default function TrackingPage({ params }) {
       body: JSON.stringify({ 
         latitude: randomLat, 
         longitude: randomLng, 
-        status: 'IN_TRANSIT',
         location: 'Driver En Route (Simulated)' 
+        // Status remains unchanged
       })
     });
     
     setUpdating(false);
-    fetchData(); // ✅ Only updates the map HERE (when you click)
+    fetchData(); // Manually refresh map after click
   };
 
   if (loading) return <div className="h-screen flex items-center justify-center"><Loader2 className="animate-spin text-indigo-600" /></div>;
@@ -92,8 +90,8 @@ export default function TrackingPage({ params }) {
             <ArrowLeft size={16} className="mr-1" /> Back
           </button>
           
-          {/* Simulation Button */}
-          {!isDelivered && (
+          {/* Button ONLY shows if status is exactly 'DISPATCHED' */}
+          {delivery.status === 'DISPATCHED' && (
             <button onClick={simulateMovement} disabled={updating} className="text-xs text-gray-400 hover:text-indigo-600 flex items-center gap-1">
               <PlayCircle size={14} /> Driver Update
             </button>
@@ -107,7 +105,6 @@ export default function TrackingPage({ params }) {
             <h1 className="text-2xl font-bold text-gray-900 mb-1">Track Delivery</h1>
             <p className="text-gray-400 text-xs font-mono mb-6">ID: {delivery.trackingNumber}</p>
             
-            {/* Status Card */}
             <div className={`p-4 rounded-xl border mb-6 ${statusColor}`}>
               <div className="flex items-center gap-2 mb-1 font-bold uppercase">
                 {isDelivered ? <CheckCircle size={18} /> : <Truck size={18} />} 
@@ -122,7 +119,6 @@ export default function TrackingPage({ params }) {
               </div>
             </div>
 
-            {/* Product */}
             <div className="flex gap-4 items-start border-t border-gray-100 pt-6 mb-6">
                {product?.images?.[0] && <img src={product.images[0]} className="w-16 h-16 rounded-lg bg-gray-100 object-cover border" />}
                <div>
@@ -133,7 +129,6 @@ export default function TrackingPage({ params }) {
                </div>
             </div>
 
-            {/* Address */}
             <div className="border-t border-gray-100 pt-6 mb-auto">
                <h4 className="text-xs font-bold text-gray-400 uppercase mb-3 tracking-wider">Destination</h4>
                <div className="flex gap-3 text-sm text-gray-600 bg-gray-50 p-3 rounded-lg">
@@ -142,7 +137,6 @@ export default function TrackingPage({ params }) {
                </div>
             </div>
 
-            {/* CONFIRM BUTTON */}
             {!isDelivered && (
               <div className="mt-6 border-t border-gray-100 pt-6">
                 <button 

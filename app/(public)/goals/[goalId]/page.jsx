@@ -3,10 +3,10 @@
 import { useEffect, useState, useRef } from "react";
 import { useParams, useRouter, useSearchParams } from "next/navigation";
 import { Line } from "react-chartjs-2";
-import "chart.js/auto"; 
-import { FileText, X, Download, FileBarChart } from "lucide-react"; 
+import "chart.js/auto";
+import { FileText, X, Download, FileBarChart, Loader2, Truck, CheckCircle, Gift } from "lucide-react";
 import GoalCard from "@/components/GoalCard";
-import RedeemAction from "@/components/RedeemAction"; // <--- Imported Component
+import RedeemAction from "@/components/RedeemAction";
 import { useUser } from "@clerk/nextjs";
 import jsPDF from "jspdf";
 import autoTable from "jspdf-autotable";
@@ -19,7 +19,7 @@ const generateInvoicePDF = (transaction, product, userName) => {
   const margin = 15;
   const rightEdge = pageWidth - margin;
 
-  doc.setTextColor(5, 150, 105); 
+  doc.setTextColor(5, 150, 105);
   doc.setFontSize(22);
   doc.setFont("helvetica", "bold");
   doc.text("INVOICE", margin, 20);
@@ -138,7 +138,6 @@ const generateReportPDF = (deposits, goalName) => {
 };
 
 /* ================= MODAL COMPONENT ================= */
-
 const InvoiceModal = ({ transaction, product, onClose, userName }) => {
   if (!transaction) return null;
   return (
@@ -212,13 +211,10 @@ export default function GoalDetails() {
   const [savingDeposit, setSavingDeposit] = useState(false);
   const [successMessage, setSuccessMessage] = useState("");
   const [selectedInvoice, setSelectedInvoice] = useState(null);
-  
-  // NEW STATE: Store addresses for redemption
   const [addresses, setAddresses] = useState([]); 
 
   const handledRef = useRef(false);
 
-  // Fetch Goal
   const fetchGoal = async () => {
     try {
       const res = await fetch(`/api/goals/${goalId}`, { cache: "no-store" });
@@ -232,18 +228,14 @@ export default function GoalDetails() {
     }
   };
 
-  // NEW: Fetch User Addresses for Redemption Modal
   const fetchAddresses = async () => {
     try {
-        // ✅ Corrected URL: Points to /app/api/address/route.js
         const res = await fetch(`/api/address`); 
         if(res.ok) {
             const data = await res.json();
             setAddresses(data.addresses || []);
         }
-    } catch (error) {
-        console.error("Error fetching addresses:", error);
-    }
+    } catch (error) { console.error(error); }
   };
 
   const normalizeAndSetGoal = (goalData) => {
@@ -253,7 +245,6 @@ export default function GoalDetails() {
       createdAt: new Date(d.createdAt),
     }));
     const calculatedSaved = deposits.reduce((sum, dep) => sum + dep.amount, 0);
-
     const dateString = goalData.endDate || goalData.targetDate;
     const validEndDate = dateString ? new Date(dateString) : null;
 
@@ -263,203 +254,152 @@ export default function GoalDetails() {
       deposits: deposits,
       saved: calculatedSaved,
       endDate: validEndDate,
+      // ✅ delivery will now be present thanks to the API fix
+      delivery: goalData.delivery, 
+      status: goalData.status
     };
     
-    normalizedGoal.progressPercent =
-      normalizedGoal.targetAmount > 0
-        ? (normalizedGoal.saved / normalizedGoal.targetAmount) * 100
-        : 0;
+    normalizedGoal.progressPercent = normalizedGoal.targetAmount > 0 ? (normalizedGoal.saved / normalizedGoal.targetAmount) * 100 : 0;
     setGoal(normalizedGoal);
   };
 
-  // Fetch Goal and Addresses on Load
   useEffect(() => {
     fetchGoal();
-    if (user) {
-        fetchAddresses();
-    }
+    if (user) fetchAddresses();
   }, [goalId, user]);
 
-  // Handle Stripe Success Logic
+  // Handle Stripe Success
   useEffect(() => {
     const payment = searchParams.get("payment");
     const amount = searchParams.get("amount");
-    
     if (payment === "success" && amount && !handledRef.current) {
       handledRef.current = true; 
       setSavingDeposit(true);
-      
       fetch(`/api/goals/${goalId}/confirm`, {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ amount: Number(amount) }),
-      })
-        .then(async (res) => {
+      }).then(async (res) => {
           const data = await res.json();
           if (data.success && data.goal) {
             normalizeAndSetGoal(data.goal); 
-            setSuccessMessage(
-              data.goalCompleted
-                ? "🎉 Deposit added and goal completed!"
-                : "✅ Deposit added successfully!"
-            );
+            setSuccessMessage(data.goalCompleted ? "🎉 Goal Completed!" : "✅ Deposit Added!");
             router.replace(`/goals/${goalId}`);
-          } else {
-            setSuccessMessage(data.error || "Something went wrong.");
           }
-        })
-        .catch((err) => console.error(err))
-        .finally(() => setSavingDeposit(false));
+        }).finally(() => setSavingDeposit(false));
     }
   }, [searchParams, goalId, router]);
 
-  if (loading) return <p className="p-4">Loading goal...</p>;
+  if (loading) return <div className="h-screen flex items-center justify-center"><Loader2 className="animate-spin text-emerald-600" /></div>;
   if (!goal) return <p className="p-4 text-red-500">Goal not found</p>;
 
   const sortedDeposits = [...goal.deposits].sort((a, b) => b.createdAt - a.createdAt);
-
-  const chartPoints = [
-    { date: new Date(goal.createdAt).toLocaleDateString(), amount: 0 },
-    ...sortedDeposits.map((d) => ({
-      date: d.createdAt.toLocaleDateString(),
-      amount: d.amount,
-    })).reverse(), 
-  ];
-
-  let runningTotal = 0;
-  const cumulativeData = chartPoints.map((p) => {
-    runningTotal += p.amount;
-    return runningTotal;
-  });
-
-  const chartData = {
-    labels: chartPoints.map((p) => p.date),
-    datasets: [
-      {
-        label: "Total Saved Progress",
-        data: cumulativeData,
-        fill: true, 
-        backgroundColor: "rgba(16,185,129,0.1)",
-        borderColor: "rgba(5,150,105,1)",
-        pointBackgroundColor: "#fff",
-        pointBorderColor: "rgba(5,150,105,1)",
-        pointBorderWidth: 2,
-        tension: 0.3, 
-      },
-    ],
-  };
-
+  const chartPoints = [{ date: new Date(goal.createdAt).toLocaleDateString(), amount: 0 }, ...sortedDeposits.map((d) => ({ date: d.createdAt.toLocaleDateString(), amount: d.amount })).reverse()];
+  const cumulativeData = chartPoints.map((p, i, arr) => arr.slice(0, i + 1).reduce((sum, c) => sum + c.amount, 0));
+  const chartData = { labels: chartPoints.map((p) => p.date), datasets: [{ label: "Total Saved", data: cumulativeData, fill: true, backgroundColor: "rgba(16,185,129,0.1)", borderColor: "rgba(5,150,105,1)", tension: 0.3 }] };
   const userName = user ? (user.fullName || user.firstName) : "Valued User";
-  const isGoalCompleted = goal.status === "COMPLETED";
+  
+  // ✅ LOGIC
+  const isGoalCompleted = goal.status === "COMPLETED" || goal.status === "REDEEMED";
+  // ✅ Redemeed if status matches OR if delivery object exists
+  const isRedeemed = goal.status === "REDEEMED" || !!goal.delivery;
 
   return (
     <div className="container mx-auto p-4 max-w-4xl">
-      {selectedInvoice && (
-        <InvoiceModal
-          transaction={selectedInvoice}
-          product={goal.product}
-          onClose={() => setSelectedInvoice(null)}
-          userName={userName}
-        />
-      )}
+      {selectedInvoice && <InvoiceModal transaction={selectedInvoice} product={goal.product} onClose={() => setSelectedInvoice(null)} userName={userName} />}
+      {successMessage && <div className="mb-4 bg-green-50 text-green-700 p-3 rounded border border-green-200">{successMessage}</div>}
 
-      {successMessage && (
-        <div className="mb-4 bg-green-50 text-green-700 p-3 rounded border border-green-200">
-          {successMessage}
+      {isGoalCompleted && !isRedeemed && (
+        <div className="mb-4 bg-green-100 text-green-800 p-3 rounded font-semibold border border-green-200 flex items-center gap-2">
+          <CheckCircle className="w-5 h-5" /> 🎉 Goal completed! Please redeem your product.
         </div>
       )}
-
-      {isGoalCompleted && (
-        <div className="mb-4 bg-green-100 text-green-800 p-3 rounded font-semibold border border-green-200">
-          🎉 Congratulations! Your goal has been completed.
-        </div>
+      {isRedeemed && (
+         <div className="mb-4 bg-blue-50 text-blue-800 p-3 rounded font-semibold border border-blue-200 flex items-center gap-2">
+            <Truck className="w-5 h-5" /> Product Redeemed! Shipment ID: {goal.delivery?.trackingNumber || "Pending"}
+         </div>
       )}
 
       <h1 className="text-2xl font-bold mb-4">{goal.product?.name || "Savings Goal"}</h1>
       <GoalCard goal={goal} />
 
-      {/* Progress Bar Section */}
       <div className="mt-6">
         <h2 className="text-lg font-semibold mb-2">Progress</h2>
         <div className="w-full bg-slate-200 rounded-full h-6 overflow-hidden relative">
-          <div
-            className={`h-6 flex items-center justify-center text-white text-xs font-bold transition-all duration-700 ease-out ${goal.progressPercent >= 100 ? "bg-green-600" : "bg-emerald-600"
-              }`}
-            style={{ width: `${Math.min(goal.progressPercent, 100)}%` }}
-          >
+          <div className="h-6 flex items-center justify-center text-white text-xs font-bold bg-emerald-600 transition-all duration-700" style={{ width: `${Math.min(goal.progressPercent, 100)}%` }}>
             {goal.progressPercent > 10 && `${Math.min(Math.round(goal.progressPercent), 100)}%`}
           </div>
         </div>
         <div className="flex justify-between mt-2 text-sm text-slate-600 font-medium">
           <span>Saved: {goal.currency || "Rs"} {goal.saved.toLocaleString()}</span>
-          
-          {goal.endDate ? (
-             <span className="text-slate-500">
-               Ends: <span className="text-red-500">{goal.endDate.toLocaleDateString()}</span>
-             </span>
-          ) : (
-             <span className="text-slate-400">No End Date</span>
-          )}
-
           <span>Target: {goal.currency || "Rs"} {goal.targetAmount.toLocaleString()}</span>
         </div>
       </div>
 
       <div className="mt-8 p-4 bg-white rounded-xl shadow-sm border border-slate-100">
         <h2 className="text-lg font-semibold mb-4">Savings Growth</h2>
-        <Line data={chartData} />
+        <div className="h-64 sm:h-80"><Line data={chartData} options={{ maintainAspectRatio: false }} /></div>
       </div>
 
-      {/* ACTION BUTTONS */}
+      {/* ✅✅✅ ACTION BUTTONS ✅✅✅ */}
       <div className="mt-6 flex flex-col sm:flex-row gap-4 flex-wrap">
-        {/* 1. Add Deposit Button */}
+        
+        {/* 1. Deposit Button */}
         <button
           disabled={savingDeposit || isGoalCompleted}
           onClick={() => router.push(`/goals/${goalId}/deposit`)}
-          className={`flex-1 sm:flex-none px-6 py-3 rounded-lg font-bold text-white shadow-md transition-all ${savingDeposit || isGoalCompleted
-            ? "bg-slate-400 cursor-not-allowed"
-            : "bg-green-600 hover:bg-green-700 hover:shadow-lg transform hover:-translate-y-0.5"
-          }`}
+          className={`flex-1 sm:flex-none px-6 py-3 rounded-lg font-bold text-white shadow-md transition-all ${savingDeposit || isGoalCompleted ? "bg-slate-400 cursor-not-allowed" : "bg-green-600 hover:bg-green-700"}`}
         >
           {savingDeposit ? "Processing..." : isGoalCompleted ? "Goal Completed" : "Add Deposit via Stripe"}
         </button>
 
-        {/* 2. Redeem Product Action */}
-        {isGoalCompleted && (
-          <RedeemAction 
-            goal={goal} 
-            addresses={addresses}
-            setAddresses={setAddresses} // Passing the setter so new addresses update immediately
-          />
+        {/* 2. Redeem Button (Active) or Disabled "Redeemed" Button */}
+        {!isRedeemed && isGoalCompleted ? (
+            <div className="flex-1 sm:flex-none">
+                <RedeemAction 
+                    goal={goal} 
+                    addresses={addresses}
+                    setAddresses={setAddresses}
+                    onSuccess={fetchGoal} 
+                />
+            </div>
+        ) : isRedeemed ? (
+            <button disabled className="flex-1 sm:flex-none px-6 py-3 rounded-lg font-bold text-white bg-indigo-300 cursor-not-allowed flex items-center justify-center gap-2">
+                <Gift className="w-5 h-5" /> Product Redeemed
+            </button>
+        ) : null}
+
+        {/* 3. Track Button (Side-by-side with Disabled Redeem) */}
+        {isRedeemed && goal.delivery && (
+            <button
+                onClick={() => router.push(`/tracking/${goal.delivery.id}`)}
+                className="flex-1 sm:flex-none px-6 py-3 rounded-lg font-bold text-white bg-blue-600 hover:bg-blue-700 shadow-md transition-all flex items-center justify-center gap-2 animate-in fade-in"
+            >
+                <Truck className="w-5 h-5" />
+                Track Delivery
+            </button>
         )}
 
-        {/* 3. Monthly Saving Report Button */}
-        <button
-          onClick={() => generateReportPDF(sortedDeposits, goal.product?.name)}
-          className="flex-1 sm:flex-none px-6 py-3 rounded-lg font-bold text-emerald-700 bg-emerald-50 border border-emerald-200 shadow-sm hover:bg-emerald-100 hover:shadow-md transition-all flex items-center justify-center gap-2"
-        >
-          <FileBarChart className="w-5 h-5" />
-          Monthly Report
+        {/* 4. Report */}
+        <button onClick={() => generateReportPDF(sortedDeposits, goal.product?.name)} className="flex-1 sm:flex-none px-6 py-3 rounded-lg font-bold text-emerald-700 bg-emerald-50 border border-emerald-200 hover:bg-emerald-100 flex items-center justify-center gap-2">
+          <FileBarChart className="w-5 h-5" /> Monthly Report
         </button>
       </div>
 
+      {/* Transactions */}
       {goal.deposits.length > 0 && (
         <div className="mt-8">
           <h2 className="text-xl font-bold mb-4 text-slate-900">Recent Transactions</h2>
           <ul className="space-y-3">
             {sortedDeposits.map((d) => (
-              <li key={d.id} className="p-5 border border-slate-200 rounded-xl flex flex-col sm:flex-row sm:justify-between sm:items-center bg-white shadow-sm gap-4">
-                <div className="flex flex-col">
-                  <span className="text-slate-900 font-bold text-base">Deposit</span>
-                  <span className="text-slate-500 text-sm mt-1">{d.createdAt.toLocaleString()}</span>
-                  <span className="text-slate-300 text-[10px] uppercase font-mono mt-1">ID: {d.id}</span>
+              <li key={d.id} className="p-5 border border-slate-200 rounded-xl flex items-center justify-between bg-white shadow-sm">
+                <div>
+                  <span className="text-slate-900 font-bold block">Deposit</span>
+                  <span className="text-slate-500 text-sm">{d.createdAt.toLocaleString()}</span>
                 </div>
-                <div className="flex items-center gap-6">
+                <div className="flex items-center gap-4">
                   <span className="font-bold text-emerald-600 text-xl">+ {d.amount.toLocaleString()}</span>
-                  <button
-                    onClick={() => setSelectedInvoice(d)}
-                    className="flex items-center gap-2 text-sm font-medium text-slate-500 hover:text-emerald-700 border border-slate-200 hover:border-emerald-300 rounded-lg px-4 py-2 transition-all bg-white hover:bg-emerald-50 shadow-sm"
-                  >
+                  <button onClick={() => setSelectedInvoice(d)} className="px-4 py-2 border rounded-lg hover:bg-emerald-50 text-slate-500 hover:text-emerald-700 text-sm flex items-center gap-2 transition-all">
                     <FileText className="w-4 h-4" /> Invoice
                   </button>
                 </div>

@@ -1,6 +1,7 @@
 import { NextResponse } from 'next/server';
 import prisma from '@/lib/prisma';
 
+// GET: Fetch Delivery Details
 export async function GET(request, { params }) {
   const { id } = await params;
 
@@ -8,24 +9,27 @@ export async function GET(request, { params }) {
     const delivery = await prisma.delivery.findUnique({
       where: { id: id },
       include: {
+        // Include latest tracking first
         deliveryTrackings: { orderBy: { recordedAt: 'desc' } },
-        goal: { include: { product: { include: { store: true } } } }
+        goal: { include: { product: { include: { store: true } }, user: true } }
       }
     });
 
     if (!delivery) return NextResponse.json({ error: 'Not found' }, { status: 404 });
 
+    // Handle BigInt serialization if necessary
     const sanitized = JSON.parse(JSON.stringify(delivery, (key, value) => 
-      (typeof value === 'object' && value !== null && value.s) ? Number(value) : value
+      (typeof value === 'bigint') ? value.toString() : value
     ));
 
     return NextResponse.json(sanitized);
   } catch (error) {
+    console.error("GET Error:", error);
     return NextResponse.json({ error: "Server Error" }, { status: 500 });
   }
 }
 
-// POST: Handle Status Updates
+// POST: Handle Status & Location Updates
 export async function POST(request, { params }) {
   const { id } = await params;
   
@@ -33,54 +37,62 @@ export async function POST(request, { params }) {
     const body = await request.json();
     const { status, latitude, longitude, location } = body;
 
-    // 1. If this is a Driver/GPS Update (Has Coordinates)
+    const dataToUpdate = {};
+
+    // 1. Handle Status Update (ONLY if explicitly provided in body)
+    if (status) {
+        dataToUpdate.status = status;
+        if (status === 'DELIVERED') {
+            dataToUpdate.deliveryDate = new Date();
+        }
+    }
+
+    // 2. Handle Location Update
+    // We check '!== undefined' so we can explicitly pass 'null' to hide the driver
+    if (latitude !== undefined) {
+        dataToUpdate.latitude = latitude === null ? null : parseFloat(latitude);
+    }
+    if (longitude !== undefined) {
+        dataToUpdate.longitude = longitude === null ? null : parseFloat(longitude);
+    }
+    if (location !== undefined) {
+        dataToUpdate.location = location;
+    }
+
+    // If payload is empty, reject (Basic validation)
+    if (Object.keys(dataToUpdate).length === 0) {
+        return NextResponse.json({ error: "No valid fields to update" }, { status: 400 });
+    }
+
+    // 3. Update the Delivery Record
+    const updatedDelivery = await prisma.delivery.update({
+      where: { id: id },
+      data: dataToUpdate
+    });
+
+    // 4. Create Tracking History (ONLY if coordinates are valid numbers)
     if (latitude && longitude) {
-      const newTracking = await prisma.deliveryTracking.create({
+      await prisma.deliveryTracking.create({
         data: {
           deliveryId: id,
-          latitude,
-          longitude,
+          latitude: parseFloat(latitude),
+          longitude: parseFloat(longitude),
           location: location || 'En Route',
-          status: status || 'IN_TRANSIT',
+          // ✅ CRITICAL FIX: Use the EXISTING status. Do NOT default to 'IN_TRANSIT'.
+          status: status || updatedDelivery.status, 
         }
       });
-      
-      // Update parent status too
-      await prisma.delivery.update({
-        where: { id: id },
-        data: { status: status || 'IN_TRANSIT' }
-      });
-
-      // Sanitize BigInt
-      const sanitizedTracking = JSON.parse(JSON.stringify(newTracking, (key, value) => 
-         (typeof value === 'object' && value !== null && value.s) ? Number(value) : value
-      ));
-
-      return NextResponse.json({ success: true, data: sanitizedTracking });
     }
 
-    // 2. If this is a Dashboard Manual Update (No Coordinates)
-    if (status) {
-       const dataToUpdate = { status };
-       
-       // If marking as DELIVERED, set the delivery timestamp
-       if (status === 'DELIVERED') {
-         dataToUpdate.deliveryDate = new Date();
-       }
+    // Sanitize response
+    const sanitizedResponse = JSON.parse(JSON.stringify(updatedDelivery, (key, value) => 
+       (typeof value === 'bigint') ? value.toString() : value
+    ));
 
-       const updatedDelivery = await prisma.delivery.update({
-        where: { id: id },
-        data: dataToUpdate
-      });
-      
-      return NextResponse.json({ success: true, data: updatedDelivery });
-    }
-
-    // If neither, return error
-    return NextResponse.json({ error: "Invalid Action: Missing status or coordinates" }, { status: 400 });
+    return NextResponse.json({ success: true, data: sanitizedResponse });
 
   } catch (error) {
     console.error("Update Error:", error);
-    return NextResponse.json({ error: "Update Failed" }, { status: 500 });
+    return NextResponse.json({ error: "Update Failed: " + error.message }, { status: 500 });
   }
 }
