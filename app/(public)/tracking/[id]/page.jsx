@@ -22,16 +22,24 @@ export default function TrackingPage({ params }) {
     try {
       const res = await fetch(`/api/delivery/${id}`);
       const data = await res.json();
+      // Only update state if data is valid and different to prevent unnecessary re-renders
       if (!data.error) setDelivery(data);
     } catch (e) { console.error(e); } finally { setLoading(false); }
   };
 
   useEffect(() => {
     if (!id) return;
+    
+    // 1. Initial Load
     fetchData(); 
     
-    // ❌ REMOVED: Auto-polling interval. 
-    // The page will NOT auto-refresh. 
+    // 2. ✅ AUTO-UPDATE: Poll every 4 seconds
+    // This ensures that when the Store Admin changes status/location, 
+    // the customer sees it immediately without refreshing.
+    const interval = setInterval(fetchData, 4000); 
+
+    // Cleanup interval on unmount
+    return () => clearInterval(interval);
   }, [id]);
 
   // --- USER ACTION: Confirm Delivery ---
@@ -66,12 +74,11 @@ export default function TrackingPage({ params }) {
         latitude: randomLat, 
         longitude: randomLng, 
         location: 'Driver En Route (Simulated)' 
-        // Status remains unchanged
       })
     });
     
     setUpdating(false);
-    fetchData(); // Manually refresh map after click
+    fetchData();
   };
 
   if (loading) return <div className="h-screen flex items-center justify-center"><Loader2 className="animate-spin text-indigo-600" /></div>;
@@ -79,6 +86,7 @@ export default function TrackingPage({ params }) {
 
   const product = delivery.goal?.product;
   const isDelivered = delivery.status === 'DELIVERED';
+  const isDispatched = delivery.status === 'DISPATCHED'; 
   const statusColor = isDelivered ? 'bg-green-50 border-green-200 text-green-700' : 'bg-blue-50 border-blue-200 text-blue-700';
 
   return (
@@ -91,7 +99,7 @@ export default function TrackingPage({ params }) {
           </button>
           
           {/* Button ONLY shows if status is exactly 'DISPATCHED' */}
-          {delivery.status === 'DISPATCHED' && (
+          {isDispatched && (
             <button onClick={simulateMovement} disabled={updating} className="text-xs text-gray-400 hover:text-indigo-600 flex items-center gap-1">
               <PlayCircle size={14} /> Driver Update
             </button>
@@ -137,7 +145,8 @@ export default function TrackingPage({ params }) {
                </div>
             </div>
 
-            {!isDelivered && (
+            {/* CONFIRM BUTTON: Only visible/enabled when DISPATCHED */}
+            {!isDelivered && isDispatched && (
               <div className="mt-6 border-t border-gray-100 pt-6">
                 <button 
                   onClick={handleConfirmDelivery}
@@ -152,6 +161,14 @@ export default function TrackingPage({ params }) {
                 </p>
               </div>
             )}
+            
+            {/* If Pending, show message instead of button */}
+            {!isDelivered && !isDispatched && (
+                <div className="mt-6 border-t border-gray-100 pt-6 text-center">
+                    <p className="text-sm text-gray-500 italic">Waiting for dispatch...</p>
+                </div>
+            )}
+
           </div>
 
           {/* MAP */}

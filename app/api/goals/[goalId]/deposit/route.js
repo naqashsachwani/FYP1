@@ -9,26 +9,23 @@ const stripe = new Stripe(process.env.STRIPE_SECRET_KEY);
 // Define POST handler for creating a Stripe checkout session
 export async function POST(req, context) {
   // ================== URL BUILDING ==================
-  // Detect the base URL dynamically:
-  // 1. Use 'origin' header if available (from browser)
-  // 2. Fall back to 'host' header + protocol (Vercel always provides host)
-  // 3. Default protocol to 'https' if not present
+  // Detect the base URL dynamically to handle localhost vs production correctly
   const protocol = req.headers.get("x-forwarded-proto") || "https"; 
   const host = req.headers.get("host"); 
   const baseUrl = req.headers.get("origin") || `${protocol}://${host}`; 
 
   // ================== PARAMS & AUTH ==================
-  // Next.js 15 requires awaiting params from context
-  const { goalId } = await context.params; // Extract goalId from URL params
+  // Extract goalId from URL params (await is required in Next.js 15+)
+  const { goalId } = await context.params; 
 
   // Get authenticated user's ID using Clerk
   const { userId } = getAuth(req); 
 
-  // If user is not logged in, return 401
+  // If user is not logged in, return 401 Unauthorized
   if (!userId)
     return NextResponse.json({ error: "Unauthenticated" }, { status: 401 });
 
-  // If no goalId is provided in URL, return 400
+  // If no goalId is provided in URL, return 400 Bad Request
   if (!goalId)
     return NextResponse.json({ error: "Goal ID missing" }, { status: 400 });
 
@@ -44,12 +41,28 @@ export async function POST(req, context) {
   // Fetch the goal from database including related product details
   const goal = await prisma.goal.findUnique({
     where: { id: goalId },
-    include: { product: true }, // Include associated product if exists
+    include: { product: true }, 
   });
 
-  // If goal does not exist, return 404
+  // If goal does not exist, return 404 Not Found
   if (!goal)
     return NextResponse.json({ error: "Goal not found" }, { status: 404 });
+
+  // ================== ✅ VALIDATE MAX DEPOSIT ==================
+  // Calculate how much is left to reach the target
+  const savedAmount = Number(goal.saved);
+  const targetAmount = Number(goal.targetAmount);
+  
+  // Ensure we don't get negative values if goal is already overfunded
+  const remainingAmount = Math.max(0, targetAmount - savedAmount);
+
+  // If user tries to deposit more than remaining, block the request
+  if (numericAmount > remainingAmount) {
+    return NextResponse.json(
+      { error: `Deposit cannot exceed the remaining target of Rs ${remainingAmount.toLocaleString()}` },
+      { status: 400 }
+    );
+  }
 
   // ================== CREATE STRIPE CHECKOUT ==================
   try {
@@ -63,18 +76,20 @@ export async function POST(req, context) {
             product_data: {
               name: goal.product?.name || "Savings Goal Deposit", // Use product name if available
             },
-            unit_amount: Math.round(numericAmount * 100), // Stripe expects amount in smallest currency unit (e.g., cents)
+            // Stripe expects amount in smallest currency unit (e.g., cents/paisa), so multiply by 100
+            unit_amount: Math.round(numericAmount * 100), 
           },
           quantity: 1, // Single unit
         },
       ],
       // Success & Cancel URLs
-      success_url: `${baseUrl}/goals/${goalId}?payment=success&amount=${numericAmount}`, // Redirect on success
-      cancel_url: `${baseUrl}/goals/${goalId}?payment=cancel`, // Redirect on cancel
+      success_url: `${baseUrl}/goals/${goalId}?payment=success&amount=${numericAmount}`, 
+      cancel_url: `${baseUrl}/goals/${goalId}?payment=cancel`, 
     });
 
-    // Return the Stripe checkout URL to the client
+    // Return the Stripe checkout URL to the client so they can be redirected
     return NextResponse.json({ checkoutUrl: session.url });
+
   } catch (err) {
     // Log Stripe errors for debugging
     console.error("Stripe error:", err);

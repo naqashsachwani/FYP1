@@ -12,7 +12,8 @@ import {
   Settings,
   Menu, 
   X,
-  Store
+  Store,
+  DollarSign // ✅ Added DollarSign icon
 } from "lucide-react"
 
 import Image from "next/image"
@@ -33,6 +34,7 @@ const StoreSidebar = ({ storeInfo }) => {
     { name: 'Add Product', href: '/store/add-product', icon: SquarePlusIcon },
     { name: 'Manage Product', href: '/store/manage-product', icon: SquarePenIcon },
     { name: 'Orders', href: '/store/orders', icon: LayoutListIcon },
+    { name: 'Revenue', href: '/store/revenue', icon: DollarSign }, // ✅ Added Revenue Link
     { name: 'Location Settings', href: '/store/store-settings', icon: Settings },
   ]
 
@@ -171,7 +173,7 @@ const StoreSidebar = ({ storeInfo }) => {
             )
           })}
         </nav>
-       
+        
       </aside>
     </>
   )

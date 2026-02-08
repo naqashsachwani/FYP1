@@ -1,33 +1,71 @@
 "use client";
 
-import { useState } from "react";
+import { useState, useEffect } from "react";
 import { useParams, useRouter } from "next/navigation";
+import { Loader2, ArrowLeft, AlertCircle } from "lucide-react";
 
 export default function DepositPage() {
   // 1. URL PARAMETERS
-  // We grab the 'goalId' from the URL 
-  // This ensures the payment is linked to the correct savings goal in the DB.
   const { goalId } = useParams();
   const router = useRouter();
 
   // 2. STATE MANAGEMENT
   const [amount, setAmount] = useState("");
-  const [loading, setLoading] = useState(false); // UX: Prevents double-submission
-  const [error, setError] = useState(null);      // UX: Feedback for validation/API errors
+  const [goal, setGoal] = useState(null); // Store goal data to calculate limits
+  const [loading, setLoading] = useState(false); // For checkout process
+  const [fetching, setFetching] = useState(true); // For initial data load
+  const [error, setError] = useState(null);
+
+  // 3. FETCH GOAL DATA (To get Target & Saved amounts)
+  useEffect(() => {
+    const fetchGoal = async () => {
+      try {
+        // We reuse the existing GET endpoint to get details
+        const res = await fetch(`/api/goals/${goalId}`);
+        const data = await res.json();
+        if (data.goal) {
+          setGoal(data.goal);
+        } else {
+          setError("Goal not found");
+        }
+      } catch (err) {
+        console.error(err);
+        setError("Failed to load goal details");
+      } finally {
+        setFetching(false);
+      }
+    };
+
+    if (goalId) fetchGoal();
+  }, [goalId]);
+
+  // Calculate Remaining Amount
+  const remaining = goal ? Math.max(0, goal.targetAmount - goal.saved) : 0;
+
+  // 4. HANDLE INPUT CHANGE WITH VALIDATION
+  const handleAmountChange = (e) => {
+    const val = e.target.value;
+    setAmount(val);
+    
+    const numVal = Number(val);
+
+    // Immediate validation feedback
+    if (numVal > remaining) {
+      setError(`Amount cannot exceed Rs ${remaining.toLocaleString()}`);
+    } else if (numVal < 0) {
+      setError("Amount must be positive");
+    } else {
+      setError(null);
+    }
+  };
 
   const handleDeposit = async () => {
-    setError(null);
-
-    // 3. CLIENT-SIDE VALIDATION
-    // To provide instant feedback and reduce unnecessary server load.
-    if (!amount || Number(amount) <= 0) {
-      return setError("Enter a valid amount");
-    }
+    if (!amount || Number(amount) <= 0) return setError("Enter a valid amount");
+    if (Number(amount) > remaining) return setError(`Maximum deposit allowed is ${remaining}`);
 
     setLoading(true);
     try {
-      // 4. API CALL (INITIATE CHECKOUT)
-      // create a secure "Stripe Checkout Session".
+      // 5. API CALL (INITIATE CHECKOUT)
       const res = await fetch(`/api/goals/${goalId}/deposit`, {
         method: "POST",
         headers: { "Content-Type": "application/json" },
@@ -36,12 +74,9 @@ export default function DepositPage() {
 
       const data = await res.json();
       
-      // Error Handling: Catches backend rejections (e.g., Goal already completed)
       if (!res.ok) throw new Error(data.error || "Stripe checkout failed");
 
-      // 5. EXTERNAL REDIRECT
-      // router.push is for internal App navigation. Since we are going 
-      // to 'checkout.stripe.com', we need a full browser redirect.
+      // 6. EXTERNAL REDIRECT
       window.location.href = data.checkoutUrl;
       
     } catch (err) {
@@ -50,41 +85,61 @@ export default function DepositPage() {
     }
   };
 
-  return (
-    <div className="min-h-screen flex items-center justify-center bg-gray-50">
-      <div className="bg-white p-6 rounded shadow w-full max-w-md">
-        <h1 className="text-xl font-bold mb-4">Deposit to Savings Goal</h1>
+  if (fetching) return <div className="min-h-screen flex items-center justify-center"><Loader2 className="animate-spin text-green-600" /></div>;
+  if (!goal) return <div className="min-h-screen flex items-center justify-center text-red-500">Goal not found</div>;
 
+  return (
+    <div className="min-h-screen flex items-center justify-center bg-gray-50 p-4">
+      <div className="bg-white p-8 rounded-xl shadow-lg w-full max-w-md">
+        
+        <div className="flex items-center gap-2 mb-6 text-gray-500 hover:text-gray-800 cursor-pointer w-fit" onClick={() => router.back()}>
+            <ArrowLeft size={18} />
+            <span className="text-sm font-medium">Back</span>
+        </div>
+
+        <h1 className="text-2xl font-bold mb-1 text-gray-900">Add Deposit</h1>
+        <p className="text-sm text-gray-500 mb-6">Towards: {goal.product?.name}</p>
+
+        {/* REMAINING LIMIT BADGE */}
+        <div className="bg-blue-50 border border-blue-200 p-4 rounded-lg mb-6">
+            <p className="text-xs text-blue-600 font-bold uppercase tracking-wider">Remaining Target</p>
+            <p className="text-2xl font-bold text-blue-900">Rs {remaining.toLocaleString()}</p>
+        </div>
+
+        <label className="block text-sm font-medium text-gray-700 mb-2">Amount</label>
         <input
           type="number"
-          placeholder="Enter amount"
+          placeholder={`Max: ${remaining}`}
           value={amount}
-          onChange={e => setAmount(e.target.value)}
-          className="border p-2 w-full rounded mb-3"
+          onChange={handleAmountChange}
+          className={`border-2 p-3 w-full rounded-lg mb-2 outline-none transition-all ${error ? 'border-red-500 focus:border-red-500' : 'border-gray-200 focus:border-green-500'}`}
         />
 
         {/* ERROR MESSAGE DISPLAY */}
         {error && (
-          <p className="text-red-600 text-sm mb-2">{error}</p>
+          <div className="flex items-center gap-2 text-red-600 text-sm mb-4 bg-red-50 p-2 rounded">
+            <AlertCircle size={16} />
+            {error}
+          </div>
         )}
 
         {/* MAIN ACTION BUTTON */}
         <button
           onClick={handleDeposit}
-          disabled={loading} 
-          className={`w-full py-2 rounded text-white ${
-            loading
+          disabled={loading || !!error || !amount || Number(amount) > remaining} 
+          className={`w-full py-3 rounded-lg font-bold text-white transition-all flex justify-center items-center gap-2 ${
+            loading || !!error || !amount
               ? "bg-gray-400 cursor-not-allowed" 
-              : "bg-green-600 hover:bg-green-700"
+              : "bg-green-600 hover:bg-green-700 shadow-md hover:shadow-lg"
           }`}
         >
-          {loading ? "Redirecting to Stripe…" : "Deposit via Stripe"}
+          {loading ? <Loader2 className="animate-spin w-5 h-5"/> : "Proceed to Payment"}
         </button>
 
         {/* CANCEL BUTTON */}
         <button
-          onClick={() => router.back()} // Next.js: Goes back to previous history entry
-          className="w-full mt-2 border py-2 rounded text-sm"
+          onClick={() => router.back()}
+          className="w-full mt-3 py-3 rounded-lg text-sm text-gray-500 hover:bg-gray-100 transition-colors"
         >
           Cancel
         </button>

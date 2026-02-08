@@ -1,55 +1,31 @@
 'use client'
 
-// Next.js hook to get the current route (used for active link styling)
 import { usePathname } from "next/navigation"
 
-// Icons used in the sidebar
+// 1. ADD 'Wallet' HERE inside the curly braces
 import { 
   ShieldCheckIcon, 
   StoreIcon, 
   TicketPercentIcon, 
   LogOutIcon,
-  LayoutGrid
+  LayoutGrid,
+  Wallet // <--- You are missing this specific import
 } from "lucide-react"
 
-// Next.js components
 import Image from "next/image"
 import Link from "next/link"
-
-// Clerk authentication hooks/components
 import { useUser, SignOutButton } from "@clerk/nextjs"
 
-/**
- * ADMIN SIDEBAR COMPONENT
- * -----------------------
- * Props:
- * - isOpen: Boolean → controls sidebar visibility on mobile
- * - onClose: Function → closes sidebar when overlay or link is clicked
- */
 export default function AdminSidebar({ isOpen, onClose }) {
-
-  // HOOK: useUser
-  // Retrieves the currently logged-in user's information from Clerk
   const { user } = useUser()
-
-  // HOOK: usePathname
-  // Gets the current URL path (e.g. "/admin/stores")
-  // Used to highlight the active sidebar link
   const pathname = usePathname()
 
-  /**
-   * SIDEBAR LINKS CONFIGURATION
-   * --------------------------
-   * Centralized array makes the sidebar:
-   * - Easy to maintain
-   * - Easy to scale
-   * - Cleaner than repeating JSX
-   */
   const sidebarLinks = [
     { name: 'Dashboard', href: '/admin', icon: LayoutGrid },
     { name: 'Stores', href: '/admin/stores', icon: StoreIcon },
     { name: 'Approve Store', href: '/admin/approve', icon: ShieldCheckIcon },
     { name: 'Coupons', href: '/admin/coupons', icon: TicketPercentIcon },
+    { name: 'Escrow', href: '/admin/escrow', icon: Wallet }, // Now Wallet is defined
   ]
 
   return (

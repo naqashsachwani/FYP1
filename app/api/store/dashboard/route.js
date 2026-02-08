@@ -1,52 +1,116 @@
-import authSeller from "@/middlewares/authSeller"; // Middleware to verify if the user is a seller
-import { getAuth } from "@clerk/nextjs/server"; // Clerk function to get authenticated user info
-import { NextResponse } from "next/server"; // Next.js response helper
-import prisma from "@/lib/prisma"; // Prisma client for database access
+import prisma from "@/lib/prisma";
+import { getAuth } from "@clerk/nextjs/server";
+import { NextResponse } from "next/server";
 
-// GET API route to fetch seller dashboard data
-export async function GET(request) {
-    try {
-        // Get the authenticated user's ID from the request
-        const { userId } = getAuth(request);
+export async function GET(req) {
+  const { userId } = getAuth(req);
+  if (!userId) return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
 
-        // Verify the user is a seller and get their store ID
-        const storeId = await authSeller(userId);
+  try {
+    // 1. Get Store ID
+    const store = await prisma.store.findUnique({
+      where: { userId: userId },
+      select: { id: true }
+    });
 
-        // Fetch all orders associated with the seller's store
-        const orders = await prisma.order.findMany({
-            where: { storeId }
-        });
-
-        // Fetch all products associated with the seller's store
-        const products = await prisma.product.findMany({
-            where: { storeId }
-        });
-
-        // Fetch all ratings for the seller's products, including related user and product info
-        const ratings = await prisma.rating.findMany({
-            where: { productId: { in: products.map(product => product.id) } },
-            include: { user: true, product: true } // Include full user and product details for each rating
-        });
-
-        // Prepare the dashboard data
-        const dashboardData = {
-            ratings, // Array of all ratings for seller's products
-            totalOrders: orders.length, // Total number of orders for the seller
-            totalEarnings: Math.round(orders.reduce((acc, order) => acc + order.total, 0)), // Sum of all order totals, rounded
-            totalProducts: products.length // Total number of products the seller has
-        };
-
-        // Return the dashboard data as a JSON response
-        return NextResponse.json({ dashboardData });
-
-    } catch (error) {
-        // Log the error for debugging
-        console.error(error);
-
-        // Return a JSON response with the error message and 400 status code
-        return NextResponse.json(
-            { error: error.code || error.message }, 
-            { status: 400 }
-        );
+    if (!store) {
+      return NextResponse.json({
+        dashboardData: {
+          totalProducts: 0,
+          totalEarnings: 0,
+          totalOrders: 0,
+          ordersDelivered: 0,
+          pendingDeliveries: 0,
+          allOrders: []
+        }
+      });
     }
+
+    // 2. Run Parallel Queries
+    const [totalProducts, financialRecords, deliveryStats] = await prisma.$transaction([
+      // A. Count Products
+      prisma.product.count({ where: { storeId: store.id } }),
+
+      // B. Fetch Escrow Records (For Earnings Calculation Only)
+      prisma.escrow.findMany({
+        where: {
+          goal: { product: { storeId: store.id } }
+        },
+        select: {
+          status: true,      // HELD, RELEASED, REFUNDED
+          amount: true,      // Total amount
+          netAmount: true,   // Amount after fees
+          releasedAt: true,  
+          createdAt: true    
+        }
+      }),
+
+      // C. Fetch Delivery Records (For Order Counts Only - Matches Order Page)
+      prisma.delivery.findMany({
+        where: {
+          goal: { product: { storeId: store.id } }
+        },
+        select: {
+          status: true // Pending, Dispatched, In_Transit, Delivered
+        }
+      })
+    ]);
+
+    // 3. Process Financial Data (Earnings)
+    let totalEarnings = 0;
+    const allOrders = [];
+
+    financialRecords.forEach(record => {
+      const gross = Number(record.amount);
+      const net = Number(record.netAmount);
+
+      if (record.status === "RELEASED") {
+        totalEarnings += net; // Store gets ~95%
+        allOrders.push({
+          createdAt: record.releasedAt || record.createdAt,
+          total: net
+        });
+      } 
+      else if (record.status === "REFUNDED") {
+        const compensation = gross * 0.10;
+        totalEarnings += compensation;
+        allOrders.push({
+          createdAt: record.releasedAt || record.createdAt,
+          total: compensation
+        });
+      }
+    });
+
+    // 4. Process Delivery Data (Order Counts)
+    let ordersDelivered = 0;
+    let pendingDeliveries = 0;
+
+    deliveryStats.forEach(d => {
+        // Normalize status check (case insensitive just in case)
+        const status = d.status?.toUpperCase();
+
+        if (status === 'DELIVERED') {
+            ordersDelivered++;
+        } else if (['PENDING', 'DISPATCHED', 'IN_TRANSIT', 'IN TRANSIT'].includes(status)) {
+            pendingDeliveries++;
+        }
+    });
+
+    const totalOrders = ordersDelivered + pendingDeliveries;
+
+    return NextResponse.json({
+      dashboardData: {
+        totalProducts,
+        totalEarnings: Math.round(totalEarnings),
+        totalOrders, 
+        ordersDelivered,
+        pendingDeliveries,
+        allOrders
+      }
+    });
+
+  } catch (error) {
+    console.error("Dashboard API Error:", error);
+    return NextResponse.json({ error: "Server Error" }, { status: 500 });
+  }
 }

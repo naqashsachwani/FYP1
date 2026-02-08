@@ -5,7 +5,8 @@ import { MapContainer, TileLayer, Marker, Popup, Polyline, useMap } from 'react-
 import L from 'leaflet';
 import 'leaflet/dist/leaflet.css';
 
-// --- 1. Map Controller (Handles Camera Movement Safely) ---
+// --- 1. Map Controller ---
+// Handles camera movement *after* the map is loaded
 function MapController({ center }) {
   const map = useMap();
 
@@ -37,18 +38,18 @@ export default function DeliveryMap({ delivery }) {
 
   // --- DATA PREPARATION ---
 
-  // 1. Get Live Driver Location (Strictly from root, no fallback to history)
-  const rawLat = delivery?.latitude;
-  const rawLng = delivery?.longitude;
+  // 1. Driver Location (Live or Null)
+  // We prioritize the root delivery fields.
+  const rawDriverLat = delivery?.latitude;
+  const rawDriverLng = delivery?.longitude;
 
-  // Validate numbers
-  const driverLat = rawLat !== null && rawLat !== undefined ? Number(rawLat) : null;
-  const driverLng = rawLng !== null && rawLng !== undefined ? Number(rawLng) : null;
+  const driverLat = rawDriverLat ? Number(rawDriverLat) : null;
+  const driverLng = rawDriverLng ? Number(rawDriverLng) : null;
 
-  // Check visibility
+  // Driver is visible only if lat/lng are valid numbers
   const isDriverVisible = driverLat !== null && driverLng !== null && !isNaN(driverLat) && !isNaN(driverLng);
 
-  // Store Location
+  // 2. Store Location
   const storeLocation = useMemo(() => {
     const store = delivery?.goal?.product?.store;
     return (store?.latitude && store?.longitude) 
@@ -56,14 +57,14 @@ export default function DeliveryMap({ delivery }) {
       : null;
   }, [delivery?.goal?.product?.store]);
 
-  // Customer Location
+  // 3. Customer Location
   const customerLocation = useMemo(() => {
     return (delivery?.destinationLat && delivery?.destinationLng)
       ? { lat: Number(delivery.destinationLat), lng: Number(delivery.destinationLng), address: delivery.shippingAddress }
       : null;
   }, [delivery?.destinationLat, delivery?.destinationLng, delivery?.shippingAddress]);
 
-  // --- ROUTE CALCULATION ---
+  // --- ROUTING LOGIC ---
   useEffect(() => {
     let isMounted = true;
 
@@ -89,7 +90,7 @@ export default function DeliveryMap({ delivery }) {
             const coordinates = data.routes[0].geometry.coordinates.map(coord => [coord[1], coord[0]]);
             if (isMounted) setRoutePath(coordinates);
         }
-      } catch (e) {}
+      } catch (e) { /* Ignore */ }
     };
 
     fetchRoute();
@@ -102,16 +103,21 @@ export default function DeliveryMap({ delivery }) {
   const HomeIcon = useMemo(() => createCustomIcon('<svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="m3 9 9-7 9 7v11a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2z"/><polyline points="9 22 9 12 15 12 15 22"/></svg>', "green"), []);
 
   // --- MAP CENTER ---
-  // If driver is visible, follow driver. Else, stay at store.
   const initialCenter = isDriverVisible ? [driverLat, driverLng] : (storeLocation ? [storeLocation.lat, storeLocation.lng] : [30.3753, 69.3451]);
 
   if (!initialCenter || isNaN(initialCenter[0])) return <div className="h-full w-full bg-gray-100 flex items-center justify-center text-gray-400">Map Loading...</div>;
+
+  // ✅ UNIQUE KEY GENERATION
+  // This forces React to trash the old map DOM and build a new one if the base ID changes.
+  // It stops Leaflet from trying to attach to a dead element.
+  const mapKey = `map-${delivery.id}`; 
 
   return (
     <div className="w-full h-full rounded-xl overflow-hidden border border-gray-200 shadow-sm bg-gray-100 relative z-0">
       <style jsx global>{` .custom-map-icon { background: transparent; border: none; } `}</style>
       
       <MapContainer 
+        key={mapKey} // 👈 THIS IS THE FIX FOR "appendChild" ERRORS
         center={initialCenter} 
         zoom={13} 
         scrollWheelZoom={true} 
@@ -119,7 +125,6 @@ export default function DeliveryMap({ delivery }) {
       >
         <TileLayer attribution='&copy; OpenStreetMap' url="https://{s}.basemaps.cartocdn.com/rastertiles/voyager/{z}/{x}/{y}{r}.png" />
         
-        {/* Helper to move camera smoothly */}
         <MapController center={initialCenter} />
 
         {storeLocation && <Marker position={[storeLocation.lat, storeLocation.lng]} icon={StoreIcon}><Popup>Store</Popup></Marker>}

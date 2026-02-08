@@ -15,11 +15,12 @@ import {
   XCircle,
   CheckCircle,
   Download,
-  RotateCcw
+  RotateCcw,
+  TrendingUp // Added icon
 } from "lucide-react"
 import {
-  AreaChart,
-  Area,
+  LineChart, // Changed from AreaChart
+  Line,      // Changed from Area
   XAxis,
   YAxis,
   CartesianGrid,
@@ -33,7 +34,6 @@ export default function AdminDashboard() {
 
   const [loading, setLoading] = useState(true)
   
-  // Initialize with safe default values to prevent undefined errors
   const [dashboardData, setDashboardData] = useState({
     products: 0,
     revenue: 0,
@@ -51,29 +51,31 @@ export default function AdminDashboard() {
     return `${currency} ${amount.toLocaleString()}`;
   };
 
-  // Transforms raw order list into a 7-day revenue array efficiently
+  // --- CHART LOGIC: Last 7 Days Revenue ---
   const processChartData = (orders) => {
     const data = [];
     const today = new Date();
     
-    const revenueMap = {};
-    
-    orders.forEach(order => {
-        if (!order.createdAt) return;
-        const dateKey = new Date(order.createdAt).toISOString().split('T')[0];
-        revenueMap[dateKey] = (revenueMap[dateKey] || 0) + (Number(order.total) || 0);
-    });
-
-    // 7-Day Array 
+    // Loop backwards 7 days
     for (let i = 6; i >= 0; i--) {
         const d = new Date();
         d.setDate(today.getDate() - i);
-        const dateStr = d.toLocaleDateString('en-US', { weekday: 'short', month: 'short', day: 'numeric' });
-        const dateKey = d.toISOString().split('T')[0];
+        
+        const comparisonDate = d.toLocaleDateString();
+        const label = d.toLocaleDateString('en-US', { weekday: 'short' }); 
+        
+        // Filter transactions for this day
+        const daysTransactions = orders.filter(o => {
+            if (!o.createdAt) return false;
+            return new Date(o.createdAt).toLocaleDateString() === comparisonDate;
+        });
 
+        // Sum Platform Fees
+        const dailyRevenue = daysTransactions.reduce((acc, curr) => acc + (Number(curr.total) || 0), 0);
+        
         data.push({
-            name: dateStr,
-            revenue: revenueMap[dateKey] || 0,
+            name: label,
+            revenue: dailyRevenue
         });
     }
     return data;
@@ -82,7 +84,7 @@ export default function AdminDashboard() {
   // --- API: Fetch Data ---
   const fetchDashboardData = async () => {
     try {
-      setLoading(true); // UX: Show spinner immediately on refresh
+      setLoading(true);
       
       const token = await getToken()
       const { data } = await axios.get('/api/admin/dashboard', {
@@ -105,32 +107,20 @@ export default function AdminDashboard() {
       
     } catch (error) {
       console.error(error)
-      toast.error("Failed to load dashboard data. Please try again.")
-      
-      // Reset to safe empty state on error
-      setDashboardData({
-        products: 0, revenue: 0, orders: 0, stores: 0,
-        refundPending: 0, orderCancelled: 0, refundApproved: 0, allOrders: []
-      })
+      toast.error("Failed to load dashboard data.")
     } finally {
       setLoading(false)
     }
   }
 
-  // --- FEATURE: PDF Report Generation ---
+  // --- REPORT GENERATION ---
   const GenerateReport = () => {
     const doc = new jsPDF();
     const pageWidth = doc.internal.pageSize.getWidth();
-    const pageHeight = doc.internal.pageSize.getHeight();
     const today = new Date();
     const brandColor = [15, 23, 42]; 
     
-    // 1. Calculate Summary Stats
-    const totalOrders = dashboardData.orders || 1;
-    const aov = dashboardData.revenue / totalOrders;
-    const refundRate = ((dashboardData.refundPending + dashboardData.refundApproved) / totalOrders) * 100;
-
-    // 2. Header Design
+    // Header
     doc.setFillColor(...brandColor);
     doc.rect(0, 0, pageWidth, 40, 'F');
     doc.setFontSize(24);
@@ -143,18 +133,12 @@ export default function AdminDashboard() {
     doc.setFontSize(10);
     doc.text(`Date: ${today.toLocaleDateString()}`, pageWidth - 14, 24, { align: 'right' });
 
-    // 3. Section 1: KPI Cards
+    // Stats
     let yPos = 55;
     doc.setFontSize(14);
     doc.setTextColor(...brandColor);
     doc.text("1. Performance Overview", 14, yPos);
     
-    const cardWidth = 45;
-    const cardHeight = 25;
-    const gap = 5;
-    const startX = 14;
-    yPos += 5;
-
     const stats = [
         { label: "Total Revenue", value: formatCurrency(dashboardData.revenue) },
         { label: "Active Stores", value: dashboardData.stores.toString() },
@@ -162,124 +146,52 @@ export default function AdminDashboard() {
         { label: "Products", value: dashboardData.products.toString() }
     ];
 
+    const cardWidth = 45;
+    const startX = 14;
+    yPos += 10;
+
     stats.forEach((stat, index) => {
-        const x = startX + (index * (cardWidth + gap));
+        const x = startX + (index * (cardWidth + 5));
         doc.setFillColor(248, 250, 252);
-        doc.setDrawColor(226, 232, 240);
-        doc.roundedRect(x, yPos, cardWidth, cardHeight, 3, 3, 'FD');
+        doc.roundedRect(x, yPos, cardWidth, 25, 3, 3, 'F');
         doc.setFontSize(9);
-        doc.setTextColor(100, 116, 139);
+        doc.setTextColor(100);
         doc.text(stat.label, x + 5, yPos + 8);
         doc.setFontSize(12);
-        doc.setTextColor(...brandColor);
-        doc.setFont("helvetica", "bold");
+        doc.setTextColor(0);
         doc.text(stat.value, x + 5, yPos + 18);
     });
 
-    // 4. Section 2: Efficiency Metrics
-    yPos += cardHeight + 15;
+    // Table
+    yPos += 45;
     doc.setFontSize(14);
     doc.setTextColor(...brandColor);
-    doc.text("2. Operational Efficiency", 14, yPos);
-    yPos += 8;
-    
-    doc.setFontSize(10);
-    doc.setFont("helvetica", "bold");
-    doc.setTextColor(71, 85, 105);
-    doc.text("Average Order Value:", 14, yPos);
-    doc.setFont("helvetica", "normal");
-    doc.text(formatCurrency(aov), 60, yPos);
+    doc.text("2. Recent Transactions", 14, yPos);
 
-    doc.setFont("helvetica", "bold");
-    doc.text("Refund Rate:", 100, yPos);
-    doc.setFont("helvetica", "normal");
-    doc.text(`${refundRate.toFixed(1)}%`, 130, yPos);
-
-    // 5. Section 3: Transaction Table
-    yPos += 15;
-    doc.setFontSize(14);
-    doc.setTextColor(...brandColor);
-    doc.setFont("helvetica", "bold");
-    doc.text("3. Recent Transaction Logs", 14, yPos);
-
-    const auditRows = dashboardData.allOrders.slice(0, 10).map(order => [
+    const auditRows = dashboardData.allOrders.slice(0, 15).map(order => [
         order.id ? order.id.substring(0, 8) : 'ERR',
-        order.createdAt ? new Date(order.createdAt).toLocaleDateString() : 'N/A',
+        new Date(order.createdAt).toLocaleDateString(),
         order.customer || 'Guest',
-        'ORDER',
-        formatCurrency(order.total || 0),
-        order.status || 'PENDING'
+        formatCurrency(order.total || 0), // This shows Fee for Admin
+        order.status
     ]);
 
     autoTable(doc, {
         startY: yPos + 5,
-        head: [['Ref ID', 'Date', 'User', 'Type', 'Amount', 'Status']],
+        head: [['Ref ID', 'Date', 'User', 'Platform Fee', 'Status']],
         body: auditRows,
         theme: 'grid',
-        headStyles: { fillColor: brandColor, textColor: 255, fontSize: 9 },
-        bodyStyles: { fontSize: 8, cellPadding: 3, textColor: 50 },
-        columnStyles: { 4: { halign: 'right' } }
+        headStyles: { fillColor: brandColor },
     });
-
-    // 6. Section 4: Revenue Table (New Page logic)
-    let finalY = doc.lastAutoTable.finalY + 15;
-    if (finalY + 60 > pageHeight) {
-        doc.addPage();
-        finalY = 20;
-    }
-
-    doc.setFontSize(14);
-    doc.setTextColor(...brandColor);
-    doc.setFont("helvetica", "bold");
-    doc.text("4. Daily Revenue Breakdown (Last 7 Days)", 14, finalY);
-
-    const revenueRows = chartData.map(day => [
-        day.name,
-        // Calculate daily order count strictly from chart data if available, or approximate
-        dashboardData.allOrders.filter(o => new Date(o.createdAt).toLocaleDateString('en-US', { weekday: 'short', month: 'short', day: 'numeric' }) === day.name).length,
-        formatCurrency(day.revenue)
-    ]);
-
-    autoTable(doc, {
-        startY: finalY + 5,
-        head: [['Date', 'Total Orders', 'Daily Revenue']],
-        body: revenueRows,
-        theme: 'striped',
-        headStyles: { fillColor: [71, 85, 105], textColor: 255, fontSize: 10 },
-        bodyStyles: { fontSize: 9, cellPadding: 3 },
-        columnStyles: { 
-            1: { halign: 'center' },
-            2: { halign: 'right', fontStyle: 'bold', textColor: [16, 185, 129] }
-        }
-    });
-
-    // 7. Footer (Page Numbers)
-    const totalPages = doc.internal.getNumberOfPages();
-    for(let i = 1; i <= totalPages; i++) {
-        doc.setPage(i);
-        doc.setFontSize(8);
-        doc.setTextColor(150);
-        doc.text(`Page ${i} of ${totalPages}`, pageWidth / 2, pageHeight - 10, { align: 'center' });
-    }
 
     doc.save(`DreamSaver_Audit_${today.toISOString().split('T')[0]}.pdf`);
   }
 
-  // Initial Data Load
   useEffect(() => {
     fetchDashboardData()
   }, [])
 
-  // UI Configuration Arrays
   const mainStats = [
-    {
-      title: 'Total Products',
-      value: dashboardData.products,
-      icon: ShoppingBasketIcon,
-      gradient: 'from-blue-500 to-indigo-600',
-      bgLight: 'bg-blue-50/50',
-      textColor: 'text-blue-600',
-    },
     {
       title: 'Total Revenue',
       value: formatCurrency(dashboardData.revenue),
@@ -287,6 +199,14 @@ export default function AdminDashboard() {
       gradient: 'from-emerald-500 to-teal-600',
       bgLight: 'bg-emerald-50/50',
       textColor: 'text-emerald-600',
+    },
+    {
+      title: 'Total Stores',
+      value: dashboardData.stores,
+      icon: StoreIcon,
+      gradient: 'from-blue-500 to-indigo-600',
+      bgLight: 'bg-blue-50/50',
+      textColor: 'text-blue-600',
     },
     {
       title: 'Total Orders',
@@ -297,9 +217,9 @@ export default function AdminDashboard() {
       textColor: 'text-violet-600',
     },
     {
-      title: 'Total Stores',
-      value: dashboardData.stores,
-      icon: StoreIcon,
+      title: 'Products',
+      value: dashboardData.products,
+      icon: ShoppingBasketIcon,
       gradient: 'from-orange-500 to-amber-600',
       bgLight: 'bg-orange-50/50',
       textColor: 'text-orange-600',
@@ -307,188 +227,88 @@ export default function AdminDashboard() {
   ]
 
   const orderStatusStats = [
-    {
-      title: 'Refund Pending',
-      value: dashboardData.refundPending,
-      icon: RefreshCcw,
-      gradient: 'from-amber-400 to-orange-500',
-      bgLight: 'bg-amber-50/50',
-      textColor: 'text-amber-600',
-    },
-    {
-      title: 'Goal Cancelled',
-      value: dashboardData.orderCancelled,
-      icon: XCircle,
-      gradient: 'from-red-500 to-rose-600',
-      bgLight: 'bg-red-50/50',
-      textColor: 'text-red-600',
-    },
-    {
-      title: 'Refund Approved',
-      value: dashboardData.refundApproved,
-      icon: CheckCircle,
-      gradient: 'from-lime-500 to-green-600',
-      bgLight: 'bg-lime-50/50',
-      textColor: 'text-lime-600',
-    },
+    { title: 'Refund Pending', value: dashboardData.refundPending, icon: RefreshCcw, gradient: 'from-amber-400 to-orange-500', bgLight: 'bg-amber-50/50', textColor: 'text-amber-600' },
+    { title: 'Goal Cancelled', value: dashboardData.orderCancelled, icon: XCircle, gradient: 'from-red-500 to-rose-600', bgLight: 'bg-red-50/50', textColor: 'text-red-600' },
+    { title: 'Refund Approved', value: dashboardData.refundApproved, icon: CheckCircle, gradient: 'from-lime-500 to-green-600', bgLight: 'bg-lime-50/50', textColor: 'text-lime-600' },
   ]
 
-  // Conditional Rendering: Only show full spinner on initial empty load
-  if (loading && dashboardData.products === 0 && dashboardData.revenue === 0) {
-    return (
-      <div className="flex items-center justify-center min-h-[70vh]">
-        <div className="animate-spin rounded-full h-12 w-12 border-b-2 border-blue-600"></div>
-      </div>
-    )
-  }
+  if (loading && dashboardData.revenue === 0) return <div className="flex items-center justify-center min-h-[70vh]"><div className="animate-spin rounded-full h-12 w-12 border-b-2 border-blue-600"></div></div>;
 
   return (
     <div className="relative min-h-[85vh] w-full bg-slate-50/50">
       <div className="max-w-7xl mx-auto space-y-8 mb-24 px-4 sm:px-6 lg:px-8 py-8">
         
-        {/* HEADER SECTION */}
+        {/* HEADER */}
         <div className="flex flex-col md:flex-row md:items-center justify-between gap-6">
           <div className="space-y-1">
             <h1 className="text-3xl sm:text-4xl font-extrabold text-slate-900 tracking-tight">
-              Dream
-              <span className="bg-gradient-to-r from-blue-600 to-violet-600 bg-clip-text text-transparent">
-                Saver
-              </span>{' '}
-              Dashboard
+              Admin <span className="bg-gradient-to-r from-blue-600 to-violet-600 bg-clip-text text-transparent">Dashboard</span>
             </h1>
-            <p className="text-slate-500 text-sm sm:text-base max-w-lg">
-              Performance overview and system status.
-            </p>
+            <p className="text-slate-500 text-sm sm:text-base">System overview and financial performance.</p>
           </div>
 
           <div className="flex flex-wrap items-center gap-3">
-            {/* Action 1: Refresh Button */}
-            <button 
-                onClick={fetchDashboardData}
-                disabled={loading}
-                className={`p-2 rounded-full border shadow-sm transition-all ${
-                    loading ? "bg-gray-100 cursor-not-allowed" : "bg-white hover:bg-gray-50 hover:scale-105"
-                }`}
-                title="Refresh Data"
-            >
-                <RotateCcw 
-                    size={20} 
-                    className={`text-slate-600 ${loading ? "animate-spin" : ""}`} 
-                />
+            <button onClick={fetchDashboardData} disabled={loading} className={`p-2 rounded-full border shadow-sm transition-all ${loading ? "bg-gray-100" : "bg-white hover:bg-gray-50"}`}>
+                <RotateCcw size={20} className={`text-slate-600 ${loading ? "animate-spin" : ""}`} />
             </button>
-
-            {/* Action 2: PDF Button */}
-            <button 
-              onClick={GenerateReport}
-              className="flex items-center gap-2 bg-slate-900 text-white px-4 py-2 rounded-full shadow-lg shadow-slate-900/20 hover:bg-slate-800 hover:scale-105 transition-all active:scale-95"
-            >
-              <Download size={16} />
-              <span className="text-sm font-medium">Download Report</span>
+            <button onClick={GenerateReport} className="flex items-center gap-2 bg-slate-900 text-white px-4 py-2 rounded-full shadow-lg hover:bg-slate-800 transition-all">
+                <Download size={16} /> <span className="text-sm font-medium">Download Report</span>
             </button>
-            
-            {/* System Status Indicator */}
-            <div className="flex items-center gap-2 bg-white/80 backdrop-blur-sm px-4 py-2 rounded-full border border-blue-100 shadow-sm cursor-default">
-              <span className="relative flex h-3 w-3">
-                <span className="animate-ping absolute inline-flex h-full w-full rounded-full bg-green-400 opacity-75"></span>
-                <span className="relative inline-flex rounded-full h-3 w-3 bg-green-500"></span>
-              </span>
-              <span className="text-sm text-slate-600 font-medium">System Active</span>
-            </div>
           </div>
         </div>
 
-        {/* SECTION 1: Main Grid */}
+        {/* MAIN STATS */}
         <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-6">
           {mainStats.map((card, index) => (
-            <div key={index} className="group relative bg-white rounded-3xl p-6 border border-slate-100 shadow-sm hover:shadow-xl hover:shadow-slate-200/50 transition-all duration-300 ease-out hover:-translate-y-1 overflow-hidden">
+            <div key={index} className="group relative bg-white rounded-3xl p-6 border border-slate-100 shadow-sm hover:shadow-xl transition-all duration-300 overflow-hidden">
               <div className={`absolute top-0 right-0 w-24 h-24 bg-gradient-to-br ${card.gradient} opacity-10 rounded-bl-full -mr-4 -mt-4 transition-transform group-hover:scale-150 duration-500`} />
               <div className="relative z-10">
                 <div className="flex items-start justify-between mb-4">
-                  <div className={`p-3 rounded-2xl ${card.bgLight} ${card.textColor} transition-colors`}>
-                    <card.icon size={24} />
-                  </div>
+                  <div className={`p-3 rounded-2xl ${card.bgLight} ${card.textColor}`}><card.icon size={24} /></div>
                 </div>
                 <div className="space-y-1">
-                  <p className="text-slate-500 text-sm font-medium tracking-wide uppercase">{card.title}</p>
-                  <h3 className="text-3xl font-bold text-slate-900 tracking-tight">{card.value}</h3>
+                  <p className="text-slate-500 text-sm font-medium uppercase">{card.title}</p>
+                  <h3 className="text-3xl font-bold text-slate-900">{card.value}</h3>
                 </div>
               </div>
             </div>
           ))}
         </div>
 
-        {/* SECTION 2: Order Status Overview */}
+        {/* STATUS GRID */}
         <div>
           <h2 className="text-xl font-bold text-slate-800 mb-4 px-1">Order Status Overview</h2>
           <div className="grid grid-cols-1 md:grid-cols-3 gap-6">
             {orderStatusStats.map((card, index) => (
-              <div key={index} className="group relative bg-white rounded-3xl p-6 border border-slate-100 shadow-sm hover:shadow-lg hover:shadow-slate-200/50 transition-all duration-300">
+              <div key={index} className="group relative bg-white rounded-3xl p-6 border border-slate-100 shadow-sm hover:shadow-lg transition-all duration-300">
                 <div className="flex items-center gap-4">
-                  <div className={`p-3 rounded-2xl ${card.bgLight} ${card.textColor} group-hover:scale-110 transition-transform`}>
-                    <card.icon size={24} />
-                  </div>
-                  <div>
-                    <p className="text-slate-500 text-sm font-medium">{card.title}</p>
-                    <h3 className="text-2xl font-bold text-slate-900">{card.value}</h3>
-                  </div>
+                  <div className={`p-3 rounded-2xl ${card.bgLight} ${card.textColor} group-hover:scale-110 transition-transform`}><card.icon size={24} /></div>
+                  <div><p className="text-slate-500 text-sm font-medium">{card.title}</p><h3 className="text-2xl font-bold text-slate-900">{card.value}</h3></div>
                 </div>
-                <div className={`absolute bottom-0 left-0 w-full h-1 bg-gradient-to-r ${card.gradient} opacity-0 group-hover:opacity-100 transition-opacity rounded-b-3xl`}></div>
               </div>
             ))}
           </div>
         </div>
 
-        {/* SECTION 3: Analytics Chart */}
-        <div className="w-full">
-           <div className="bg-white rounded-3xl border border-slate-100 shadow-sm p-6">
-              <div className="flex items-center justify-between mb-6">
-                 <div>
-                   <h2 className="text-xl font-bold text-slate-800">Revenue Analytics</h2>
-                   <p className="text-sm text-slate-500">Real-time performance (Last 7 Days)</p>
-                 </div>
-              </div>
-
-              <div id="revenue-chart" className="h-[350px] w-full bg-white p-2"> 
+        {/* CHART SECTION (LINE CHART) */}
+        <div className="w-full bg-white rounded-3xl border border-slate-100 shadow-sm p-6">
+            <div className="flex items-center justify-between mb-6">
+                <div>
+                    <h2 className="text-xl font-bold text-slate-800 flex items-center gap-2"><TrendingUp className="text-blue-600" size={24} /> Platform Revenue Analytics</h2>
+                    <p className="text-sm text-slate-500">Earnings from fees (Last 7 Days)</p>
+                </div>
+            </div>
+            <div className="h-[350px] w-full">
                 <ResponsiveContainer width="100%" height="100%">
-                  <AreaChart data={chartData} margin={{ top: 10, right: 10, left: -20, bottom: 0 }}>
-                    <defs>
-                      <linearGradient id="colorRevenue" x1="0" y1="0" x2="0" y2="1">
-                        <stop offset="5%" stopColor="#8b5cf6" stopOpacity={0.3}/>
-                        <stop offset="95%" stopColor="#8b5cf6" stopOpacity={0}/>
-                      </linearGradient>
-                    </defs>
-                    <CartesianGrid strokeDasharray="3 3" vertical={false} stroke="#f1f5f9" />
-                    <XAxis 
-                      dataKey="name" 
-                      axisLine={false} 
-                      tickLine={false} 
-                      tick={{fill: '#64748b', fontSize: 12}} 
-                      dy={10}
-                    />
-                    <YAxis 
-                      axisLine={false} 
-                      tickLine={false} 
-                      tick={{fill: '#64748b', fontSize: 12}} 
-                      tickFormatter={(value) => formatCurrency(value)}
-                    />
-                    <Tooltip 
-                      contentStyle={{ backgroundColor: '#fff', borderRadius: '12px', border: '1px solid #e2e8f0', boxShadow: '0 4px 6px -1px rgb(0 0 0 / 0.1)' }}
-                      itemStyle={{ fontSize: '12px', fontWeight: 600 }}
-                      formatter={(value) => [formatCurrency(value), 'Revenue']}
-                    />
-                    <Area 
-                      type="monotone" 
-                      dataKey="revenue" 
-                      stroke="#8b5cf6" 
-                      strokeWidth={3}
-                      fillOpacity={1} 
-                      fill="url(#colorRevenue)" 
-                      name="Revenue"
-                    />
-                  </AreaChart>
+                    <LineChart data={chartData} margin={{ top: 10, right: 10, left: 0, bottom: 0 }}>
+                        <CartesianGrid strokeDasharray="3 3" vertical={false} stroke="#f1f5f9" />
+                        <XAxis dataKey="name" axisLine={false} tickLine={false} tick={{fill: '#64748b', fontSize: 12}} dy={10} />
+                        <YAxis axisLine={false} tickLine={false} tick={{fill: '#64748b', fontSize: 12}} tickFormatter={(value) => `${currency}${value}`} />
+                        <Tooltip contentStyle={{ backgroundColor: '#fff', borderRadius: '12px', border: '1px solid #e2e8f0', boxShadow: '0 4px 6px -1px rgb(0 0 0 / 0.1)' }} itemStyle={{ color: '#1e293b', fontWeight: 600 }} formatter={(value) => [`${currency}${value}`, "Revenue"]} />
+                        <Line type="monotone" dataKey="revenue" stroke="#4f46e5" strokeWidth={3} dot={{ r: 4, fill: "#4f46e5", strokeWidth: 2, stroke: "#fff" }} activeDot={{ r: 6, strokeWidth: 0, fill: "#4f46e5" }} />
+                    </LineChart>
                 </ResponsiveContainer>
-              </div>
-           </div>
+            </div>
         </div>
 
       </div>

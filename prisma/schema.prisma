@@ -471,16 +471,20 @@ model PriceLock {
 }
 
 model Escrow {
-  id         String       @id @default(cuid())
-  goalId     String?      @unique
-  orderId    String?
-  amount     Decimal      @db.Decimal(18, 2)
-  currency   String       @default("PKR")
-  status     EscrowStatus @default(HELD)
-  heldSince  DateTime     @default(now())
-  releasedAt DateTime?
-  releasedBy String?
-  notes      String?
+  id          String       @id @default(cuid())
+  goalId      String?      @unique
+  orderId     String?
+  amount      Decimal      @db.Decimal(18, 2)
+  
+  platformFee Decimal      @db.Decimal(18, 2) @default(0) // Stores the 5% or 20% cut
+  netAmount   Decimal      @db.Decimal(18, 2) @default(0) // Stores the actual amount sent to user/store
+  
+  currency    String       @default("PKR")
+  status      EscrowStatus @default(HELD)
+  heldSince   DateTime     @default(now())
+  releasedAt  DateTime?
+  releasedBy  String?
+  notes       String?
 
   // Relations
   goal  Goal?  @relation("GoalEscrow", fields: [goalId], references: [id], onDelete: Cascade)

@@ -5,11 +5,11 @@ import axios from "axios"
 import { 
     CircleDollarSignIcon, 
     ShoppingBasketIcon, 
-    TargetIcon, 
     TruckIcon, 
     ClockIcon,
     DownloadIcon,
-    TrendingUp
+    TrendingUp,
+    Package // New Icon for Total Orders
 } from "lucide-react"
 import { useRouter } from "next/navigation"
 import { useEffect, useState } from "react"
@@ -17,8 +17,8 @@ import toast from "react-hot-toast"
 import jsPDF from 'jspdf'
 import autoTable from 'jspdf-autotable'
 import {
-  AreaChart,
-  Area,
+  LineChart, 
+  Line,      
   XAxis,
   YAxis,
   CartesianGrid,
@@ -26,14 +26,9 @@ import {
   ResponsiveContainer
 } from 'recharts'
 
-
 export default function Dashboard() {
 
     // AUTHENTICATION & CONFIG
-    // We use Clerk's hook to get the 'getToken' function.
-    // getToken retrieve the JWT (JSON Web Token) securely. We must pass this 
-    //   token in the Authorization header of our API calls so the backend knows 
-    //   EXACTLY which store data to return."
     const { getToken } = useAuth()
     const currency = process.env.NEXT_PUBLIC_CURRENCY_SYMBOL || 'Rs'
     const router = useRouter() 
@@ -41,13 +36,10 @@ export default function Dashboard() {
     // STATE MANAGEMENT
     const [loading, setLoading] = useState(true)
     
-    // Initializing state with "Safe Defaults" (0 or empty arrays).
-    // This prevents "Cannot read property of undefined" errors in the UI 
-    //   before the API response arrives.
     const [dashboardData, setDashboardData] = useState({
         totalProducts: 0,
         totalEarnings: 0,
-        totalGoals: 0,
+        totalOrders: 0, // Changed from totalGoals
         ordersDelivered: 0,
         pendingDeliveries: 0,
         allOrders: [] 
@@ -55,63 +47,54 @@ export default function Dashboard() {
     const [chartData, setChartData] = useState([])
 
     /**
-     * Loop to ensure continuity. If a day has 0 sales, the chart should 
-     * show a flat line at 0, rather than skipping the day entirely."
+     * PROCESS CHART DATA
      */
     const processChartData = (orders = []) => {
-        const days = 7;
         const data = [];
         const today = new Date();
         
-        // Loop backwards from 6 days ago to today (0)
         for (let i = 6; i >= 0; i--) {
             const d = new Date();
             d.setDate(today.getDate() - i);
-            const dateStr = d.toLocaleDateString('en-US', { weekday: 'short' }); // Label: "Mon", "Tue"
-            const dateKey = d.toISOString().split('T')[0]; 
             
-            // Filter: Find orders created on this specific date
+            const comparisonDate = d.toLocaleDateString();
+            const label = d.toLocaleDateString('en-US', { weekday: 'short' }); 
+            
             const daysOrders = orders.filter(o => {
-                const orderDate = o.createdAt ? new Date(o.createdAt).toISOString().split('T')[0] : '';
-                return orderDate === dateKey;
+                if (!o.createdAt) return false;
+                const orderDate = new Date(o.createdAt).toLocaleDateString();
+                return orderDate === comparisonDate;
             });
 
-            // Aggregation: Sum totals 
             const dailyRevenue = daysOrders.reduce((acc, curr) => acc + (Number(curr.total) || 0), 0);
             
             data.push({
-                name: dateStr,
+                name: label,
                 revenue: dailyRevenue
             });
         }
         return data;
     }
 
-    // API INTEGRATION: fetchDashboardData
-     
+    // API INTEGRATION
     const fetchDashboardData = async () => {
         try {
-            // 1. Get Security Token
             const token = await getToken()
             
-            // 2. Make Request
             const { data } = await axios.get('/api/store/dashboard', {
                 headers: { Authorization: `Bearer ${token}` }
             })
             
-            // 3. Data Sanitization 
             const safeData = {
-                totalProducts: data.dashboardData.totalProducts || 0,
-                totalEarnings: data.dashboardData.totalEarnings || 0,
-                totalGoals: data.dashboardData.totalGoals || 0,
-                ordersDelivered: data.dashboardData.ordersDelivered || 0,
-                pendingDeliveries: data.dashboardData.pendingDeliveries || 0,
+                totalProducts: Number(data.dashboardData.totalProducts) || 0,
+                totalEarnings: Number(data.dashboardData.totalEarnings) || 0,
+                totalOrders: Number(data.dashboardData.totalOrders) || 0, // ✅ Map Total Orders
+                ordersDelivered: Number(data.dashboardData.ordersDelivered) || 0,
+                pendingDeliveries: Number(data.dashboardData.pendingDeliveries) || 0,
                 allOrders: data.dashboardData.allOrders || [] 
             }
 
             setDashboardData(safeData)
-            
-            // 4. Chart Processing immediately after data load
             setChartData(processChartData(safeData.allOrders))
 
         } catch (error) {
@@ -127,9 +110,8 @@ export default function Dashboard() {
         const pageWidth = doc.internal.pageSize.getWidth();
         const pageHeight = doc.internal.pageSize.getHeight();
         const today = new Date();
-        const brandColor = [30, 41, 59]; // Custom Slate 800 Color
+        const brandColor = [30, 41, 59];
 
-        
         doc.setFillColor(...brandColor);
         doc.rect(0, 0, pageWidth, 40, 'F');
 
@@ -142,7 +124,6 @@ export default function Dashboard() {
         doc.setFont("helvetica", "normal");
         doc.text("Store Performance Audit Report", 14, 28);
 
-        // Dynamic Meta Data
         doc.setFontSize(10);
         doc.text(`Report ID: ${Date.now()}`, pageWidth - 14, 18, { align: 'right' });
         doc.text(`Date: ${today.toLocaleDateString()}`, pageWidth - 14, 24, { align: 'right' });
@@ -160,24 +141,19 @@ export default function Dashboard() {
         const startX = 14;
         yPos += 5;
 
-        // Data for cards
         const stats = [
             { label: "Total Earnings", value: `${currency}${dashboardData.totalEarnings.toLocaleString()}` },
             { label: "Products", value: dashboardData.totalProducts.toString() },
-            { label: "Total Goals", value: dashboardData.totalGoals.toString() },
+            { label: "Total Orders", value: dashboardData.totalOrders.toString() },
             { label: "Delivered", value: dashboardData.ordersDelivered.toString() }
         ];
 
-        // Loop to draw rectangles and text for each stat
         stats.forEach((stat, index) => {
             const x = startX + (index * (cardWidth + gap));
-            
-            // Draw Background Rect
-            doc.setFillColor(248, 250, 252); // Slate 50
-            doc.setDrawColor(226, 232, 240); // Border color
-            doc.roundedRect(x, yPos, cardWidth, cardHeight, 3, 3, 'FD'); // FD = Fill & Draw border
+            doc.setFillColor(248, 250, 252); 
+            doc.setDrawColor(226, 232, 240); 
+            doc.roundedRect(x, yPos, cardWidth, cardHeight, 3, 3, 'FD'); 
 
-            // Draw Labels & Values
             doc.setFontSize(9);
             doc.setTextColor(100, 116, 139);
             doc.text(stat.label, x + 5, yPos + 8);
@@ -196,25 +172,21 @@ export default function Dashboard() {
         yPos += 5;
         doc.setFontSize(10);
         doc.setTextColor(50);
-        // Calculation Logic embedded in report generation
         const healthText = `Pending Deliveries: ${dashboardData.pendingDeliveries} | Delivery Completion Rate: ${dashboardData.ordersDelivered > 0 ? ((dashboardData.ordersDelivered / (dashboardData.ordersDelivered + dashboardData.pendingDeliveries)) * 100).toFixed(1) + '%' : 'N/A'}`;
         doc.text(healthText, 14, yPos + 5);
 
-        // --- D. Detailed Revenue Breakdown Table ---
         yPos += 15;
         doc.setFontSize(14);
         doc.setTextColor(...brandColor);
         doc.setFont("helvetica", "bold");
         doc.text("3. Daily Revenue Breakdown (Last 7 Days)", 14, yPos);
 
-        // Map chart data to Table Rows format
         const auditRows = chartData.length > 0 ? chartData.map(day => [
             day.name,
             `${currency}${day.revenue.toLocaleString()}`,
             day.revenue > 0 ? 'Active' : 'No Sales'
         ]) : [['-', '-', '-']];
 
-        // Use autoTable library to render the grid
         autoTable(doc, {
             startY: yPos + 5,
             head: [['Day', 'Revenue', 'Status']],
@@ -238,7 +210,6 @@ export default function Dashboard() {
                 0: { fontStyle: 'bold' },
                 1: { halign: 'right' }
             },
-            // Footer hook: Adds page numbers automatically
             didDrawPage: function (data) {
                 doc.setFontSize(8);
                 doc.setTextColor(150);
@@ -247,18 +218,14 @@ export default function Dashboard() {
             }
         });
 
-        // Trigger Download in Browser
         doc.save(`DreamSaver_Store_Report_${today.toISOString().split('T')[0]}.pdf`);
     }
 
-    // LIFECYCLE: Run once on component mount
     useEffect(() => {
         fetchDashboardData()
     }, [])
 
   
-    // Storing card data in an array allows us to map() over it in JSX, 
-    // keeping the return statement clean and readable.
     const dashboardCardsData = [
         { 
             title: 'Total Earnings', 
@@ -277,9 +244,10 @@ export default function Dashboard() {
             textColor: 'text-blue-600'
         },
         { 
-            title: 'Total Goals', 
-            value: dashboardData.totalGoals, 
-            icon: TargetIcon,
+            // ✅ CHANGED: Total Orders Card
+            title: 'Total Orders', 
+            value: dashboardData.totalOrders, 
+            icon: Package, // New Icon
             gradient: 'from-violet-500 to-purple-600',
             bgLight: 'bg-violet-50',
             textColor: 'text-violet-600'
@@ -302,8 +270,6 @@ export default function Dashboard() {
         },
     ]
 
-    // LOADING STATE:
-    // Show a spinner instead of broken UI while data is fetching.
     if (loading) return (
         <div className="min-h-[70vh] flex items-center justify-center bg-slate-50/50">
             <div className="text-center space-y-3">
@@ -339,12 +305,11 @@ export default function Dashboard() {
                     </div>
                 </div>
 
-                {/* Stats Grid: Mapping over configuration array */}
+                {/* Stats Grid */}
                 <div className="grid grid-cols-1 md:grid-cols-2 xl:grid-cols-3 gap-6">
                     {dashboardCardsData.map((card, index) => (
                         <div 
                             key={index} 
-                            // Complex styling for hover effects and gradients
                             className="relative overflow-hidden bg-white rounded-3xl p-6 border border-slate-100 shadow-sm hover:shadow-xl hover:shadow-slate-200/50 transition-all duration-300 hover:-translate-y-1 group"
                         >
                             <div className={`absolute top-0 right-0 w-32 h-32 bg-gradient-to-br ${card.gradient} opacity-5 rounded-bl-full -mr-8 -mt-8 transition-transform group-hover:scale-150 duration-500`}></div>
@@ -366,7 +331,6 @@ export default function Dashboard() {
                 </div>
 
                 {/* --- Chart Section --- */}
-                {/* Visualizing the 7-day revenue trend using Recharts */}
                 <div className="w-full bg-white rounded-3xl p-6 border border-slate-100 shadow-sm">
                     <div className="flex items-center justify-between mb-6">
                         <div>
@@ -380,13 +344,7 @@ export default function Dashboard() {
 
                     <div className="h-[350px] w-full">
                         <ResponsiveContainer width="100%" height="100%">
-                            <AreaChart data={chartData} margin={{ top: 10, right: 10, left: 0, bottom: 0 }}>
-                                <defs>
-                                    <linearGradient id="colorRevenue" x1="0" y1="0" x2="0" y2="1">
-                                        <stop offset="5%" stopColor="#4f46e5" stopOpacity={0.3}/>
-                                        <stop offset="95%" stopColor="#4f46e5" stopOpacity={0}/>
-                                    </linearGradient>
-                                </defs>
+                            <LineChart data={chartData} margin={{ top: 10, right: 10, left: 0, bottom: 0 }}>
                                 <CartesianGrid strokeDasharray="3 3" vertical={false} stroke="#f1f5f9" />
                                 <XAxis 
                                     dataKey="name" 
@@ -406,15 +364,15 @@ export default function Dashboard() {
                                     itemStyle={{ color: '#1e293b', fontWeight: 600 }}
                                     formatter={(value) => [`${currency}${value}`, "Revenue"]}
                                 />
-                                <Area 
+                                <Line 
                                     type="monotone" 
                                     dataKey="revenue" 
                                     stroke="#4f46e5" 
                                     strokeWidth={3} 
-                                    fillOpacity={1} 
-                                    fill="url(#colorRevenue)" 
+                                    dot={{ r: 4, fill: "#4f46e5", strokeWidth: 2, stroke: "#fff" }}
+                                    activeDot={{ r: 6, strokeWidth: 0, fill: "#4f46e5" }}
                                 />
-                            </AreaChart>
+                            </LineChart>
                         </ResponsiveContainer>
                     </div>
                 </div>
